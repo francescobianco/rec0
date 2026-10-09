@@ -1,5 +1,5 @@
-# Progetto di prova: usa sorgenti sintetiche, non serve webcam né schermo.
-project: prova
+# Test project: synthetic sources only, no webcam or screen needed.
+project: test
 
 video:
   resolution: 1280x720

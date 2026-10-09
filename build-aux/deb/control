@@ -1,0 +1,23 @@
+Package: rec0
+Version: @VERSION@
+Section: video
+Priority: optional
+Architecture: all
+Installed-Size: @SIZE@
+Maintainer: Francesco Bianco <info.francescobianco@gmail.com>
+Homepage: https://github.com/francescobianco/rec0
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, python3-yaml, python3-numpy,
+ gir1.2-gtk-4.0, gir1.2-gtk-3.0, gir1.2-adw-1, gir1.2-gstreamer-1.0,
+ gir1.2-gdkpixbuf-2.0, gir1.2-graphene-1.0,
+ gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad,
+ gstreamer1.0-plugins-ugly, gstreamer1.0-x, gstreamer1.0-pipewire,
+ ffmpeg, libx11-6, libxfixes3
+Recommends: gstreamer1.0-libav, intel-media-va-driver | mesa-va-drivers
+Description: declarative screencast recorder for GNOME
+ rec0 records tutorials and screencasts from a project file: a short YAML
+ document describes the webcam, the windows to show and the output, and the
+ scenes follow the window focus on their own while you work.
+ .
+ It composes everything live on a virtual desktop (webcam close-up, shared
+ windows with a webcam bubble), keeps private pages out of the video, and
+ optimizes the voice after recording (noise, levels, loudness for YouTube).

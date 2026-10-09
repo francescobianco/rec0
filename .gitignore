@@ -10,3 +10,5 @@ dist/
 *.mp4
 *.mkv
 _build/
+_build-deb/
+dist/

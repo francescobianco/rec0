@@ -1,195 +1,248 @@
+<div align="center">
+
+<img src="data/icons/hicolor/scalable/apps/io.github.francescobianco.Rec0.svg" width="112" alt="rec0 icon">
+
 # rec0
 
-Registratore video **dichiarativo** per GNOME. Un file YAML descrive l'intera
-sessione: apri il progetto, premi registra. Niente scene da costruire a mano come in
-OBS: la composizione è predeterminata.
+**Declarative screencast recorder for GNOME.**
+Describe the session once in a small YAML file, press record, and just work:
+rec0 cuts between your webcam and your windows on its own, keeps private pages
+out of the video, and hands you a file with clean, YouTube-ready sound.
 
-## Come funziona
+[![Latest release](https://img.shields.io/github/v/release/francescobianco/rec0?sort=semver)](https://github.com/francescobianco/rec0/releases/latest)
+[![Release](https://github.com/francescobianco/rec0/actions/workflows/release.yml/badge.svg)](https://github.com/francescobianco/rec0/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Il video è sempre composto su un **desktop virtuale** (di default
-`assets/background.jpg`, oppure un colore o un'immagine a scelta), sul quale rec0
-mostra una di due scene:
+</div>
 
-| Scena | Quando | Cosa si vede |
+---
+
+## Install
+
+On Ubuntu 24.04 or later (or Debian 13), download the latest package and
+install it:
+
+```bash
+curl -fsSLO https://github.com/francescobianco/rec0/releases/latest/download/rec0_all.deb
+sudo dpkg -i rec0_all.deb || sudo apt-get install -f -y
+```
+
+`dpkg -i` installs the package; if some dependencies are missing it stops,
+and `apt-get install -f` fetches them and completes the installation. In one
+step, letting apt resolve everything:
+
+```bash
+curl -fsSL -o /tmp/rec0_all.deb https://github.com/francescobianco/rec0/releases/latest/download/rec0_all.deb
+sudo apt install /tmp/rec0_all.deb
+```
+
+Then open **rec0** from the Activities overview, or run `rec0`.
+
+| Fixed download links (always the latest release) | |
+|---|---|
+| Debian/Ubuntu package | <https://github.com/francescobianco/rec0/releases/latest/download/rec0_all.deb> |
+| Release page | <https://github.com/francescobianco/rec0/releases/latest> |
+
+Every release also carries the versioned file (`rec0_<version>_all.deb`); a
+specific version is at `https://github.com/francescobianco/rec0/releases/download/v<version>/rec0_<version>_all.deb`.
+To remove rec0: `sudo apt remove rec0`.
+
+## How it works
+
+The video is always composed on a **virtual desktop** (an image or a colour),
+and rec0 shows one of two scenes on it. The scene follows the window focus,
+with a short transition:
+
+<p align="center"><img src="docs/scenes.svg" alt="The two scenes: webcam close-up, and a shared window at its real position with the webcam in a bubble" width="100%"></p>
+
+| Scene | When | What the video shows |
 |---|---|---|
-| **Primo piano** | rec0 ha il focus, oppure qualsiasi finestra *non* elencata nel progetto | la webcam |
-| **Condivisione** | ha il focus una delle finestre elencate in `windows` | la finestra, nella **stessa posizione e dimensione** che ha sullo schermo reale, più la webcam in un cerchio |
+| **Close-up** | rec0, or any window *not* listed in the project, has focus | the webcam |
+| **Share** | a window listed under `windows` has focus | that window, at the **same position and size** it has on your screen, in an accent-coloured frame, with the webcam in a circle |
 
-Il cambio di scena è automatico e segue il focus, con una breve transizione. Se
-sposti o ridimensioni la finestra, nel video si sposta anche lei. Per le tab del
-browser basta fare il match sul titolo: cambiando tab, cambia la scena.
-
-Durante la registrazione, appena lasci la finestra di rec0, sullo schermo compare una
-**bolla rotonda con la webcam**: sempre in primo piano, trascinabile, non prende mai il
-focus. Nella scena di condivisione il cerchio della webcam nel video segue la bolla e la
-copre esattamente, così la tua faccia non compare due volte.
+- Move or resize a window and it moves in the video too. For browser tabs,
+  match on the title: switching tab switches the scene.
+- While recording, a **round webcam bubble** floats on your screen: always on
+  top, draggable, never takes focus. In the share scene the webcam circle in
+  the video sits exactly where the bubble is, so your face never appears twice.
+- Each shared window is captured on its own, so other windows covering it do
+  not end up in the video, and windows you shared stay on the virtual desktop
+  when the focus moves on.
+- A countdown runs the real pipeline (nothing is written yet), the start is
+  frame-exact, and the video closes with a short CRT power-off.
 
 ### Privacy
 
-Le finestre non elencate nel progetto non compaiono mai nel video. In più rec0 ha una
-**privacy list** di siti che non vengono registrati nemmeno dentro una finestra
-condivisa: posta (gmail.com, outlook, libero…), chat web (WhatsApp Web, Telegram, Google
-Chat, Messenger, Instagram, LinkedIn, Slack, Discord, Teams…), password manager, PayPal e
-banche online. Anche le **app desktop** di messaggistica, posta e password (Teams, Skype,
-Slack, Discord, Telegram, Signal, WhatsApp, Zoom, Thunderbird, Evolution, KeePassXC…)
-sono riconosciute dalla classe della finestra, qualunque cosa mostrino. Se una tab privata va in focus:
+Windows you did not list never appear. On top of that, rec0 has a built-in
+**privacy list**: web mail, chats, password managers and online banking are
+never recorded, even inside a listed browser window; desktop messaging, mail
+and password apps (Teams, Slack, Thunderbird, KeePassXC…) are recognised by
+their window class, whatever they show. When a private page takes focus:
 
-- da primo piano, la scena **non passa** in condivisione finché non torni su una tab
-  condivisibile;
-- durante la condivisione, il livello schermo si **congela** sull'ultimo fotogramma
-  sicuro. Webcam e audio continuano a essere registrati.
+- from the close-up, the scene **does not switch** to share;
+- while sharing, that window **freezes** on its last safe frame, while webcam
+  and audio keep recording.
 
-Il flusso dello schermo è ritardato di 0,4 s: nascondere e congelare sono immediati,
-mentre mostrare nuovo contenuto avviene solo dopo che i fotogrammi catturati prima del
-cambio sono stati scartati. Nemmeno un fotogramma della tab privata finisce nel video.
+The screen stream is delayed by 0.4 s: hiding and freezing are immediate,
+while new content is shown only after the frames captured before the change
+have been dropped. Not a single frame of a private page reaches the video.
 
-X11 espone il titolo delle finestre, non l'URL: ogni dominio è riconosciuto dal nome
-o dalle parole che il sito mette nel titolo (es. "Gmail"). La lista si personalizza
-nel progetto:
+X11 exposes window titles, not URLs: each site is recognised by the name or
+words it puts in the title (e.g. "Gmail"). Customise the list per project:
 
 ```yaml
 privacy:
-  allow: [app.slack.com, zoom]      # toglie voci dalla lista predefinita (siti o app)
-  block:                            # aggiunge le tue
-    - miabanca.example
+  allow: [app.slack.com, zoom]     # lift built-in entries (sites or apps)
+  block:                           # add your own
+    - mybank.example
     - {domain: intranet.example, titles: ["Intranet"]}
 ```
 
-### Audio: ottimizzazione automatica
+### Sound
 
-A fine registrazione rec0 ottimizza l'audio con un **processore adattivo**: prima misura
-la registrazione, poi accende solo i circuiti che servono, con parametri ricavati dalle
-misure. Chi registra per la prima volta, anche con un microfono economico, ottiene subito
-un audio pulito, uniforme e al volume giusto per YouTube.
+After recording, an **adaptive processor** measures the voice and switches on
+only the circuits it needs, with settings derived from the measurements. A
+first-time creator with a cheap microphone gets clean, even sound at the right
+loudness for YouTube.
 
-| Circuito | Si accende quando | Come si regola |
+| Circuit | Turns on when | Tuned by |
 |---|---|---|
-| declip | ci sono campioni saturati | — |
-| highpass | sempre | taglio a 70/80/100 Hz secondo il rimbombo misurato |
-| dehum | spicca una riga a 50/60 Hz | notch sulla fondamentale e 3 armoniche |
-| preamp | la voce è sotto -30 dBFS | la porta a -24 dBFS prima del denoise |
-| denoise | il rumore sarebbe udibile **dopo** la normalizzazione | rete neurale RNNoise, miscelazione in base al bisogno |
-| expander | resta rumore nelle pause | abbassa le pause fino a 18 dB, soglia tra rumore e voce |
-| leveler | il livello della voce varia (distanza dal microfono) | non alza le pause |
-| mud / presence / deesser | medio-bassi in eccesso / voce ovattata / sibilanti aspre | EQ ed de-esser dosati sulla misura |
-| compressor | c'è parlato | rapporto 2:1, 3:1 o 4:1 secondo la gamma dinamica |
-| loudness + limiter | sempre | EBU R128 a due passate: -14 LUFS, true peak -1 dBTP (limitatore sovracampionato 4×) |
+| echo canceller | system sound is recorded too | removes from the microphone what the speakers played |
+| declip | samples are clipped | — |
+| highpass | always | 70/80/100 Hz cut, from the measured rumble |
+| dehum | a 50/60 Hz line stands out | notch on the fundamental and 3 harmonics |
+| preamp | the voice is below -30 dBFS | brings it to -24 dBFS before denoising |
+| denoise | noise would be audible **after** normalisation | RNNoise neural network, mixed by need |
+| pauses / expander | noise is left between words | lowers pauses by up to 18 dB |
+| leveler | the voice level varies (distance from the microphone) | does not raise pauses |
+| mud / presence / de-esser | boomy low-mids / muffled voice / harsh sibilance | EQ and de-esser dosed on the measurement |
+| compressor | there is speech | 2:1, 3:1 or 4:1 from the dynamic range |
+| loudness + limiter | always | two-pass EBU R128: -14 LUFS, -1 dBTP (4× oversampled limiter) |
 
-Il denoise è **sotto controllo in retroazione**: prima del rendering il processore misura
-quanta voce sopravvive e, se la rete neurale ne toglie più di 3 dB, ne riduce la
-miscelazione o passa a un denoise spettrale delicato. La voce viene prima della pulizia.
+The denoiser runs **under feedback**: before rendering, the processor checks
+how much voice survives, and if the neural network would take more than 3 dB
+of it, it lowers the mix or switches to a gentle spectral denoiser. The voice
+comes before cleanliness. Every filter's delay is compensated, so the voice
+stays in sync with the picture.
 
-**Audio multitraccia.** Microfono e audio di sistema (quello che ascolti mentre
-registri: un video, un brano) vengono registrati su **tracce separate**. Il processore
-lavora solo sulla voce; l'audio di sistema viene sovrapposto **identico all'originale**,
-e un limitatore interviene solo se la somma saturerebbe. Anche con l'ottimizzazione
-disattivata le tracce vengono unite in una, perché i lettori ne riproducono una sola.
-Con le casse il microfono capta anche l'audio di sistema: per una sovrapposizione
-pulita usa le cuffie.
+**System sound, as you heard it.** Microphone and system sound (what you hear
+while recording: a video, a song) are recorded on **separate tracks**. Only
+the voice is processed; the system sound is laid over it **untouched**, and a
+limiter acts only if the sum would clip. With speakers instead of headphones
+the microphone also picks up what they play: since the system sound track is
+the exact reference of it, rec0 estimates that echo (with the room's
+reflections, following the drift between the two devices' clocks) and removes
+it from the microphone before processing.
 
-L'originale, con le tracce separate, resta accanto al risultato (`nome.original.mp4`)
-e, se l'elaborazione fallisce, la registrazione viene ripristinata. Il video non viene
-ricodificato.
+The original, with the tracks separate, is kept next to the result
+(`name.original.mp4`); if processing fails the recording is restored. The
+video is never re-encoded.
 
 ```yaml
 audio:
-  processing: auto      # oppure off
+  processing: auto      # or off (the tracks are still mixed into one)
   target: youtube       # youtube (-14 LUFS), podcast (-16), broadcast (-23)
   keep_original: true
 ```
 
-Da terminale, anche su video esistenti:
+From the terminal, on any video:
 
 ```bash
-rec0 process video.mp4 --dry-run   # mostra misure e circuiti che si accenderebbero
-rec0 process video.mp4             # crea video.processed.mp4
+rec0 process video.mp4 --dry-run   # show the measurements and the circuits that would turn on
+rec0 process video.mp4             # write video.processed.mp4
 ```
 
-Serve `ffmpeg`. Il modello RNNoise (`assets/rnnoise/sh.rnnn`) viene da
-[GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models).
+### Under the hood
 
-## Installazione
+One GStreamer pipeline, built from the project and never restarted while
+recording: scene changes only move the compositor's pads.
 
-Dipendenze (Ubuntu):
-
-```bash
-sudo apt install python3-gi python3-gi-cairo python3-yaml gir1.2-gtk-4.0 gir1.2-gtk-3.0 \
-  gir1.2-adw-1 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-  gstreamer1.0-pipewire gstreamer1.0-x gettext ffmpeg
+```mermaid
+flowchart LR
+  bg[Virtual desktop<br/>image or colour] --> mix
+  cam[Webcam<br/>MJPEG, GPU decode] --> crop[mirror · crop] --> mix
+  subgraph win [one branch per shared window]
+    x[ximagesrc<br/>window pixels] --> ptr[mouse pointer] --> delay[0.4 s privacy delay] --> frame[crop · frame]
+  end
+  frame --> mix[compositor]
+  mix --> outro[CRT closing] --> tee{tee}
+  tee --> preview[live preview<br/>1280 px]
+  tee --> enc[H.264<br/>GPU or x264] --> mux[(MP4 / MKV)]
+  mic[Microphone] --> aac1[AAC track 1] --> mux
+  sys[System sound] --> aac2[AAC track 2] --> mux
+  mux -. after stop .-> post[echo canceller · voice processor · mix] --> final[(final video)]
 ```
 
-Poi:
+- **Hardware acceleration**: H.264 encoding and the webcam's MJPEG decoding
+  run on the GPU through VA-API when available (measured on Intel UHD 730:
+  encoding 1080p30 from ~42% to ~3% of a core), with automatic fallback to
+  software. `REC0_NO_HW=1` forces software.
+- **Light preview**: without recording, the picture is composed at preview
+  size, and each window is shrunk right after capture.
 
-```bash
-make install      # installa per il tuo utente in ~/.local (senza root)
-make uninstall    # rimuove tutto
-```
+## Use
 
-rec0 compare nella panoramica Attività, apre i file di progetto `.r0` dal file manager (Apri
-con…) e si integra con GNOME: istanza singola, notifiche, progetti recenti, blocco
-della sospensione durante la registrazione, cartella Video come destinazione.
+Graphical interface: `rec0` or `rec0 project.r0`. Pick **webcam and
+microphone** from the bottom bar; the choice is remembered and overrides the
+project's.
 
-Per le distribuzioni c'è il build system **Meson** (`meson setup _build && meson
-install -C _build`) e un manifest **Flatpak** in `build-aux/flatpak/`.
-
-## Uso
-
-Interfaccia grafica: `rec0` oppure `rec0 progetto.r0`.
-
-| Scorciatoia | Azione |
+| Shortcut | Action |
 |---|---|
-| Ctrl+R | avvia/ferma la registrazione (con conto alla rovescia) |
-| Ctrl+1 / 2 / 3 | scena automatica / primo piano / condivisione |
-| Ctrl+O, Ctrl+N, Ctrl+E | apri, nuovo, modifica il file del progetto |
-| Ctrl+, | preferenze |
-| Ctrl+? | scorciatoie da tastiera |
+| Ctrl+R | start / stop recording (with countdown) |
+| Ctrl+1 / 2 / 3 | automatic / close-up / share scene |
+| Ctrl+O, Ctrl+N, Ctrl+E | open, new, edit the project file |
+| Ctrl+, | preferences |
+| Ctrl+? | keyboard shortcuts |
 
-Dalla barra in basso si scelgono **webcam e microfono**; la scelta viene ricordata e
-vale al posto di quella del progetto.
-
-Da terminale:
+From the terminal:
 
 ```bash
-rec0 init tutorial              # crea tutorial.r0 commentato
-rec0 devices                    # webcam, microfoni, monitor e finestre aperte
-rec0 check tutorial.r0        # valida il progetto e verifica i dispositivi
-rec0 record tutorial.r0       # registra senza GUI (Ctrl+C per fermare)
+rec0 init tutorial              # create a commented tutorial.r0
+rec0 devices                    # webcams, microphones, monitors and open windows
+rec0 check tutorial.r0          # validate the project and check the devices
+rec0 record tutorial.r0         # record without the GUI (Ctrl+C to stop)
 rec0 record tutorial.r0 -d 60 --scene camera --no-bubble
 ```
 
-L'interfaccia è in inglese con traduzione italiana: segue la lingua del sistema
-(`LANGUAGE=it rec0` per forzarla).
+The interface follows the system language (English, Italian);
+`LANGUAGE=it rec0` forces one.
 
-## Il file di progetto
+## The project file
+
+A project is a YAML file with the `.r0` extension (rec0 registers the MIME
+type, so the file manager opens it with rec0). `rec0 init` writes a commented
+one; every key is optional except what you want to change.
 
 ```yaml
 project: tutorial-python
 
 video:
-  resolution: 1920x1080      # oppure 720p, 1080p, 1440p, 4k
+  resolution: 1920x1080      # or 720p, 1080p, 1440p, 4k
   fps: 30
-  transition: 0.3            # secondi
+  transition: 0.3            # seconds
 
-background: sfondo.jpg       # colore (#RRGGBB) o immagine; default assets/background.jpg
+background: wallpaper.jpg    # colour (#RRGGBB) or image; default: rec0's background
 
 camera:
-  device: default            # default, /dev/videoN, parte del nome, "test"
-  closeup: fullscreen        # oppure {position: center, width: 70%}
-  overlay:                   # durante la condivisione; false per nasconderla
+  device: default            # default, /dev/videoN, part of the name, "test"
+  mirror: true               # like a mirror (default: the preference, on)
+  closeup: fullscreen        # or {position: center, width: 70%}
+  overlay:                   # during the share scene; false to hide it
     position: bottom-right   # top-left, top, top-right, left, center, right, bottom-*
-    width: 240               # pixel o percentuale
-    shape: circle            # circle o rect (16:9)
-    fit: cover               # cover (ritaglia), contain, stretch
-  bubble:                    # bolla sullo schermo durante la registrazione; false per toglierla
+    width: 240               # pixels or percent
+    shape: circle            # circle or rect (16:9)
+    fit: cover               # cover (crop), contain, stretch
+  bubble:                    # bubble on screen while recording; false to disable
     size: 200
-    position: bottom-right   # posizione iniziale, poi la trascini dove vuoi
+    position: bottom-right   # where it starts; then drag it anywhere
 
 screen:
-  monitor: primary           # primary, indice o nome (HDMI-1)
-  margin: 40                 # bordo di desktop virtuale attorno allo schermo reale
+  monitor: primary           # primary, index or name (HDMI-1)
+  margin: 0                  # virtual desktop border around the real screen
+  frame: accent              # frame around shared windows: accent, #RRGGBB or false
+  cursor: true               # draw the mouse pointer
 
-windows:                     # match su titolo o classe, senza maiuscole/minuscole
+windows:                     # match on title or class, case-insensitive
   - match: Firefox
   - match: "Python 3 documentation"
   - match: gnome-terminal
@@ -199,81 +252,120 @@ privacy:
   block: []
 
 audio:
-  microphone: default        # default, false, parte del nome del dispositivo
-  desktop: false             # audio di sistema: traccia a parte, mantenuta com'è
+  microphone: default        # default, false, part of the device name
+  desktop: false             # system sound: its own track, kept as heard
+  processing: auto
+  target: youtube
 
-launch:                      # applicazioni da avviare all'apertura
+launch:                      # applications to start when the project opens
   - command: firefox https://docs.python.org/3/
   - command: gnome-terminal
     cwd: ~/Develop
 
 output:
-  directory: ~/Video/Tutorial          # default: cartella Video, sottocartella rec0
-  filename: "{project}-{timestamp}.mp4"   # anche {date}, {format}
-  format: mp4                # mp4 (H.264 + AAC) o mkv
+  directory: ~/Videos/Tutorial         # default: the Videos folder, rec0 subfolder
+  filename: "{project}-{timestamp}.mp4"   # also {date}, {format}
+  format: mp4                # mp4 (H.264 + AAC) or mkv
 ```
 
-Altri esempi in [`examples/`](examples/); `examples/test.r0` usa solo sorgenti
-sintetiche e funziona anche senza webcam.
+More in [`examples/`](examples/); `examples/test.r0` uses synthetic sources
+only and works without a webcam.
 
-## X11 e Wayland
+## X11 and Wayland
 
-- **X11**: tutto è automatico. rec0 cattura il monitor con `ximagesrc` e legge focus
-  e geometria delle finestre direttamente da Xlib.
-- **Wayland**: lo schermo si cattura tramite XDG Desktop Portal + PipeWire. La prima
-  volta GNOME chiede quale schermo condividere; l'autorizzazione viene ricordata
-  (`rec0 forget` per azzerarla). Wayland non permette alle applicazioni di sapere quale
-  finestra ha il focus né dove si trova: lì le scene si cambiano a mano e la
-  condivisione mostra l'intero schermo.
+- **X11**: fully automatic. rec0 captures each window with `ximagesrc` and
+  reads focus and geometry straight from Xlib.
+- **Wayland**: the screen is captured through the XDG Desktop Portal and
+  PipeWire. The first time, GNOME asks which screen to share; the permission
+  is remembered (`rec0 forget` resets it). Wayland does not let applications
+  know which window has focus or where it is: there, scenes are switched by
+  hand and the share scene shows the whole screen.
 
-## Sviluppo
+## Development
 
 ```bash
-make start                      # avvia dal sorgente (profilo di sviluppo + API locale)
-make api ARGS="state"           # pilota l'istanza in esecuzione
-make test                       # test
-make pot                        # aggiorna po/rec0.pot
+git clone https://github.com/francescobianco/rec0 && cd rec0
+make start                      # run from the source tree (development profile + local API)
+make test                       # test suite
+make install                    # install for your user in ~/.local, no root (make uninstall)
+make pot                        # refresh po/rec0.pot
 ```
 
-`make start` usa l'ID `io.github.francescobianco.Rec0.Devel`, così convive con la
-versione installata; la barra del titolo a strisce indica il profilo di sviluppo.
-
-### API locale di sviluppo
-
-Con `make start` rec0 espone un'API HTTP su `127.0.0.1` (porta e token casuali in
-`$XDG_RUNTIME_DIR/rec0-devapi.json`), pensata per guidare l'app durante lo sviluppo e
-per i test automatici. `build-aux/devctl.py` (o `make api ARGS=…`) è il client:
+Runtime dependencies on Ubuntu, for running from source:
 
 ```bash
-make api ARGS="state"                        # stato dell'app in JSON
-make api ARGS="open examples/test.r0"      # apre un progetto
+sudo apt install python3-gi python3-gi-cairo python3-yaml python3-numpy gir1.2-gtk-4.0 \
+  gir1.2-gtk-3.0 gir1.2-adw-1 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+  gstreamer1.0-pipewire gstreamer1.0-x gettext ffmpeg
+```
+
+`make start` uses the app ID `io.github.francescobianco.Rec0.Devel`, so it
+lives side by side with the installed version; the striped header bar marks
+the development profile. Distributions can build with **Meson**
+(`meson setup _build && meson install -C _build`), and there is a **Flatpak**
+manifest in `build-aux/flatpak/`.
+
+### Local development API
+
+With `make start`, rec0 serves an HTTP API on `127.0.0.1` (random port and
+token in `$XDG_RUNTIME_DIR/rec0-devapi.json`) to drive the app during
+development and in automated checks. `build-aux/devctl.py` (or
+`make api ARGS=…`) is the client:
+
+```bash
+make api ARGS="state"                        # the app's state as JSON
+make api ARGS="open examples/test.r0"        # open a project
 make api ARGS="record start"                 # start | stop | toggle
 make api ARGS="scene share"                  # auto | camera | share
 make api ARGS="focus 'Docs - Google Chrome' google-chrome 100 100 1200 800"
-make api ARGS="screenshot ui.png"            # PNG della sola finestra di rec0
-make api ARGS="action app.preferences"       # attiva una qualsiasi azione
+make api ARGS="screenshot ui.png"            # PNG of rec0's window only
+make api ARGS="action app.preferences"       # activate any action
 make api ARGS="eval 'result = win.get_title()'"
 make api ARGS="log"
 ```
 
-### Architettura
+### Architecture
 
-| Modulo | Ruolo |
+| Module | Role |
 |---|---|
-| `project.py` | carica e valida lo YAML (tutti gli errori in una volta) |
-| `privacy.py` | privacy list dei siti da non registrare |
-| `capture.py` | webcam, microfoni, monitor, portale ScreenCast |
-| `x11.py` | accesso diretto a Xlib (ctypes): finestra attiva, geometrie, monitor |
-| `focus.py` | segue la finestra attiva |
-| `scenes.py` | geometria delle scene e transizioni (funzioni pure) |
-| `recorder.py` | pipeline GStreamer e `Director`, che anima le scene e applica la privacy |
-| `audio.py` | processore audio adattivo: analisi, piano dei circuiti, rendering |
-| `postprocess.py` | ottimizzazione a fine registrazione, con l'originale al sicuro |
-| `bubble.py` | bolla con la webcam sullo schermo (processo GTK3 separato) |
-| `app.py` | interfaccia GTK4 + Libadwaita |
-| `devapi.py` | API locale di sviluppo |
-| `cli.py` | comandi `rec0 …` |
+| `project.py` | loads and validates the YAML (all errors at once) |
+| `privacy.py` | privacy list of sites and apps never recorded |
+| `capture.py` | webcams, microphones, monitors, ScreenCast portal |
+| `x11.py` | direct Xlib access (ctypes): active window, geometry, monitors, pointer |
+| `focus.py` | follows the active window |
+| `scenes.py` | scene geometry and transitions (pure functions) |
+| `recorder.py` | GStreamer pipeline and `Director`, which animates scenes and applies privacy |
+| `hw.py` | VA-API hardware encoding and decoding, when it works |
+| `echo.py` | removes the speakers' echo from the microphone |
+| `audio.py` | adaptive audio processor: analysis, plan of circuits, rendering |
+| `postprocess.py` | optimisation after recording, with the original kept safe |
+| `bubble.py` | webcam bubble on screen (separate GTK3 process) |
+| `app.py` | GTK4 + Libadwaita interface |
+| `devapi.py` | local development API |
+| `cli.py` | `rec0 …` commands |
 
-La pipeline è sempre la stessa: `compositor` con sfondo, cattura del monitor (ritardata
-e ritagliata sulla finestra attiva) e webcam. Le scene cambiano modificando a runtime le
-proprietà dei pad del compositor, quindi senza interrompere la registrazione.
+### Releasing
+
+Releases are built by GitHub Actions ([`release.yml`](.github/workflows/release.yml))
+only when a version tag is pushed:
+
+1. bump the version in `meson.build`, `rec0/__init__.py`, `pyproject.toml` and
+   the metainfo, and move the `Unreleased` notes of [`CHANGELOG.md`](CHANGELOG.md)
+   under the new version;
+2. `build-aux/check-version.sh 1.2.3` checks that everything agrees;
+3. `git tag v1.2.3 && git push origin v1.2.3`.
+
+The workflow builds the package (`build-aux/deb/build-deb.sh`), installs it
+on a clean runner and runs `rec0 check`, then publishes the release with the
+CHANGELOG section as notes and both `rec0_1.2.3_all.deb` and `rec0_all.deb`
+attached: the latter is what the fixed `latest/download` link serves.
+
+## Credits
+
+The RNNoise model (`assets/rnnoise/sh.rnnn`) comes from
+[GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models).
+
+## License
+
+[MIT](LICENSE) © Francesco Bianco

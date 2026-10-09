@@ -1,0 +1,68 @@
+# Publishes a GitHub release with the .deb package for every version tag (v1.2.3).
+#
+# Each release carries two copies of the same package:
+#   rec0_<version>_all.deb   the versioned file
+#   rec0_all.deb             a fixed name, so that
+#     https://github.com/francescobianco/rec0/releases/latest/download/rec0_all.deb
+#   always downloads the latest version.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the version in the sources
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          build-aux/check-version.sh "$VERSION"
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends meson ninja-build gettext \
+            python3-gi python3-gi-cairo python3-yaml libglib2.0-bin gtk-update-icon-cache \
+            desktop-file-utils shared-mime-info fakeroot
+
+      - name: Build the package
+        run: build-aux/deb/build-deb.sh "$VERSION"
+
+      - name: Install the package and check that rec0 runs
+        run: |
+          sudo apt-get install -y -qq ./dist/rec0_all.deb
+          rec0 --version
+          rec0 check examples/test.r0
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ## Install
+
+          \`\`\`bash
+          curl -fsSLO https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/rec0_${VERSION}_all.deb
+          sudo apt install ./rec0_${VERSION}_all.deb
+          \`\`\`
+          EOF
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/rec0_${VERSION}_all.deb" dist/rec0_all.deb \
+            --title "rec0 $VERSION" --notes-file notes.md --verify-tag

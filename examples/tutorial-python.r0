@@ -5,11 +5,11 @@ video:
   fps: 30
   transition: 0.3
 
-# Desktop virtuale: colore (#RRGGBB) o immagine (percorso relativo a questo file).
-# Se omesso si usa assets/background.jpg.
-# background: sfondo.jpg
+# Virtual desktop: a colour (#RRGGBB) or an image (path relative to this file).
+# When omitted, assets/background.jpg is used.
+# background: wallpaper.jpg
 
-# Primo piano quando rec0 (o una finestra non elencata) ha il focus.
+# Close-up while rec0 (or a window not listed below) has focus.
 camera:
   device: default
   closeup: fullscreen
@@ -17,14 +17,14 @@ camera:
     position: bottom-right
     width: 320
 
-# Condivisione quando una di queste finestre ha il focus.
+# Share scene while one of these windows has focus.
 screen:
   monitor: primary
   margin: 40
 
 windows:
-  - match: Firefox                 # tutte le finestre di Firefox
-  - match: "Python 3 documentation"  # solo la tab con questo titolo (qualsiasi browser)
+  - match: Firefox                 # every Firefox window
+  - match: "Python 3 documentation"  # only the tab with this title (any browser)
   - match: gnome-terminal
 
 audio:

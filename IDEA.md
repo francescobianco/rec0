@@ -1,56 +1,55 @@
-Per un programma del genere, su Ubuntu con GNOME, sceglierei Python 3 + GTK4 + GStreamer, con un file YAML per configurare ogni progetto di registrazione.
+For a program like this, on Ubuntu with GNOME, I would pick Python 3 + GTK4 + GStreamer, with a YAML file to configure each recording project.
 
-Non userei Electron, non svilupperei un motore video da zero e, almeno inizialmente, eviterei anche Qt.
+I would not use Electron, I would not write a video engine from scratch and, at least at first, I would avoid Qt as well.
 
-L'idea che mi piace è costruire un registratore video dichiarativo: tu descrivi cosa vuoi registrare e come vuoi disporre le sorgenti, mentre il programma si occupa di tutto.
+The idea I like is to build a declarative video recorder: you describe what you want to record and how the sources should be laid out, and the program takes care of everything else.
 
-## 1. Lo stack che sceglierei
+## 1. The stack I would choose
 
-| Componente                         | Tecnologia                    |
+| Component                          | Technology                    |
 | ---------------------------------- | ----------------------------- |
-| Linguaggio                         | Python 3                      |
-| Interfaccia grafica                | GTK4 + Libadwaita             |
-| Registrazione e composizione video | GStreamer                     |
-| Cattura desktop                    | PipeWire + XDG Desktop Portal |
+| Language                           | Python 3                      |
+| Graphical interface                | GTK4 + Libadwaita             |
+| Video recording and composition    | GStreamer                     |
+| Desktop capture                    | PipeWire + XDG Desktop Portal |
 | Webcam                             | Video4Linux2 / PipeWire       |
 | Audio                              | PipeWire                      |
-| Configurazione                     | YAML                          |
+| Configuration                      | YAML                          |
 | Output                             | MP4 (H.264 + AAC)             |
-| Ambiente di sviluppo               | VS Code, oppure Neovim        |
+| Development environment            | VS Code, or Neovim            |
 
-Perché Python? Perché il valore di questo programma non è nell'encoding video, ma nell'orchestrazione delle sorgenti, nella gestione della configurazione e nella semplicità dell'interfaccia. Per queste attività Python è perfetto.
+Why Python? Because the value of this program is not in video encoding, but in orchestrating the sources, managing the configuration and keeping the interface simple. Python is perfect for that.
 
-Perché GStreamer? Perché puoi costruire pipeline che acquisiscono più flussi audio/video, li compongono, li sincronizzano e producono un unico file.
+Why GStreamer? Because you can build pipelines that capture several audio/video streams, compose them, keep them in sync and produce a single file.
 
-E GTK4 ti permetterebbe di avere un'applicazione realmente integrata in GNOME, senza trascinarti dietro un framework grafico pesante.
+And GTK4 gives you an application that is truly integrated into GNOME, without dragging along a heavy graphical framework.
 
-## 2. Come immagino il programma
+## 2. How I picture the program
 
+```
 Recorder — tutorial-python.yaml
 
-Pronto
+Ready
 
 Browser
-
-Finestra principale
-
+Main window
 Webcam
+Terminal
 
-Terminale
-
-Microfono attivo
+Microphone on
 
 00:00:00
 
 REC
+```
 
-Bozza concettuale dell'interfaccia: un'anteprima, il progetto corrente, un indicatore audio e un pulsante per registrare.
+A conceptual sketch of the interface: a preview, the current project, an audio meter and a record button.
 
-Niente decine di controlli come OBS. Solo il necessario per produrre rapidamente un video pronto da caricare su YouTube.
+No dozens of controls like OBS. Only what is needed to quickly produce a video ready to upload to YouTube.
 
-## 3. Il cuore sarebbe il file YAML
+## 3. The heart would be the YAML file
 
-Immagino qualcosa del genere:
+I imagine something like this:
 
 ```
 project: tutorial-python
@@ -82,67 +81,51 @@ output:
   format: mp4
 ```
 
-Apri il progetto, premi REC e registri.
+Open the project, press REC and record.
 
-La configurazione YAML potrebbe anche descrivere applicazioni da avviare automaticamente, ad esempio Firefox con un URL, oppure un terminale nella directory del progetto.
+The YAML configuration could also describe applications to start automatically, for example Firefox with a URL, or a terminal in the project directory.
 
-Separerei concettualmente due elementi:
+I would keep two concepts apart:
 
-- Sources: ciò che viene catturato.
-- Layout: come le sorgenti vengono composte nel video finale.
+- Sources: what is captured.
+- Layout: how the sources are composed in the final video.
 
-In questo modo potresti avere diversi layout senza ridefinire i dispositivi.
+That way you could have several layouts without redefining the devices.
 
-## 4. Il problema tecnico principale: Wayland
+## 4. The main technical problem: Wayland
 
-Su Ubuntu GNOME moderno, la parte più delicata è la cattura delle singole finestre.
+On a modern Ubuntu GNOME, the most delicate part is capturing individual windows.
 
-Wayland non permette a un'applicazione qualsiasi di acquisire liberamente le finestre delle altre applicazioni. La cattura avviene normalmente tramite XDG Desktop Portal e PipeWire, e può richiedere all'utente di selezionare esplicitamente le finestre autorizzate.&#x20;
+Wayland does not let an arbitrary application freely capture the windows of other applications. Capture normally goes through the XDG Desktop Portal and PipeWire, and may require the user to explicitly select the windows that are allowed.
 
-[image](https://www.google.com/s2/favicons?domain=https://doc.qt.io\&sz=32)
+This means that a YAML entry like `match: "Firefox"` can identify the desired source, but does not guarantee that it can be captured automatically without interaction.
 
-Qt 6.12.0
+So I would plan an initial step that associates the sources, reusing the permissions when the desktop allows it.
 
-+1
+## 5. Minimal architecture
 
+I would write four Python modules:
 
+- `project.py`: loads and validates the YAML.
+- `capture.py`: manages sources and permissions.
+- `recorder.py`: builds the GStreamer pipelines and records.
+- `app.py`: provides the GTK interface.
 
-Questo significa che un YAML come `match: "Firefox"` può identificare la sorgente desiderata, ma non garantisce di poterla acquisire automaticamente senza interazione.
-
-Perciò prevederei una fase iniziale di associazione delle sorgenti, con riutilizzo delle autorizzazioni quando consentito dal desktop.
-
-## 5. Architettura minimale
-
-Realizzerei quattro moduli Python:
-
-- `project.py`: carica e valida YAML.
-- `capture.py`: gestisce sorgenti e autorizzazioni.
-- `recorder.py`: costruisce le pipeline GStreamer e registra.
-- `app.py`: offre l'interfaccia GTK.
-
-Il vantaggio è che il motore potrebbe funzionare anche senza interfaccia grafica, con comandi come:
+The advantage is that the engine could also work without a graphical interface, with commands like:
 
 ```
 recorder check tutorial.yaml
 recorder record tutorial.yaml
 ```
 
-## 6. Una possibile alternativa ancora più veloce
+## 6. A possibly even faster alternative
 
-Se l'obiettivo fosse realizzare un prototipo estremamente robusto, valuterei anche Python + OBS WebSocket, lasciando a OBS tutto il lavoro di composizione e registrazione.
+If the goal were an extremely robust prototype, I would also consider Python + OBS WebSocket, leaving all the composition and recording work to OBS.
 
-Il tuo programma diventerebbe semplicemente un controller YAML con un'interfaccia minimale. OBS dispone già di un motore per gestire sorgenti audio e video.&#x20;
+Your program would then simply be a YAML controller with a minimal interface. OBS already has an engine to handle audio and video sources.
 
-[image](https://www.google.com/s2/favicons?domain=https://docs.obsproject.com\&sz=32)
+However, for a standalone, lightweight application that is well integrated into Ubuntu, I would prefer GTK4 + GStreamer.
 
-OBS Studio 33.0.0 documentation
+One design choice I would make right away: the program should be neither a video editor nor an OBS clone. It should be a project-based video recorder, where a YAML file defines the whole recording session.
 
-
-
-Tuttavia, per un'applicazione autonoma, leggera e ben integrata in Ubuntu, preferirei GTK4 + GStreamer.
-
-Una scelta progettuale che farei subito: il programma non dovrebbe essere un editor video né un clone di OBS. Dovrebbe essere un project-based video recorder, dove un YAML definisce l'intera sessione di registrazione.
-
-Ti farei però una domanda architetturale importante: vuoi registrare contemporaneamente più finestre e webcam componendole in un unico video, oppure registrare le sorgenti separatamente e comporle successivamente?
-
-È la decisione che influenzerebbe di più la complessità del motore.
+There is, however, one important architectural question for you: do you want to record several windows and the webcam at the same time, composing them into a single video, or record the sources separately and compose them later?

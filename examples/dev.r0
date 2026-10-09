@@ -1,4 +1,4 @@
-# Progetto usato da `make start`: webcam e microfono reali, primo piano a tutto schermo.
+# Project used by `make start`: real webcam and microphone, full-screen close-up.
 project: dev
 
 video:
