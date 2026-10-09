@@ -125,6 +125,15 @@ msgstr "Ingresso predefinito"
 msgid "No Audio"
 msgstr "Nessun audio"
 
+msgid "_Optimize Audio"
+msgstr "_Ottimizza l'audio"
+
+msgid "Audio optimization off: recordings keep the original sound"
+msgstr "Ottimizzazione audio disattivata: le registrazioni mantengono l'audio originale"
+
+msgid "Audio optimization on"
+msgstr "Ottimizzazione audio attiva"
+
 msgid "Stop recording before changing project"
 msgstr "Ferma la registrazione prima di cambiare progetto"
 
@@ -220,12 +229,6 @@ msgstr "Bolla della webcam"
 
 msgid "While recording, show your webcam on screen when rec0 is not focused"
 msgstr "Durante la registrazione, mostra la webcam sullo schermo quando rec0 non è in primo piano"
-
-msgid "Optimize Audio"
-msgstr "Ottimizza l'audio"
-
-msgid "Reduce noise, even out levels and set the loudness for online video after recording; the original is kept"
-msgstr "Dopo la registrazione riduce il rumore, uniforma i livelli e imposta la loudness per i video online; l'originale viene conservato"
 
 msgid "Open the last used project at startup"
 msgstr "Apre all'avvio l'ultimo progetto usato"

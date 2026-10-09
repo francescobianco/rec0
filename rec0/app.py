@@ -19,7 +19,7 @@ from .bubble import Bubble  # noqa: E402
 from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
 from .focus import FocusTracker  # noqa: E402
 from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
-from .project import EXTENSION, EXTENSIONS, ProjectError, Rect, load, template  # noqa: E402
+from .project import EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio_processing, template  # noqa: E402
 
 PROJECT_MIME = "application/x-rec0-project"
 from .recorder import Director, Recorder  # noqa: E402
@@ -301,7 +301,19 @@ class Window(Adw.ApplicationWindow):
         section = Gio.Menu()
         section.append(_("As Set in the Project"), "win.microphone::")
         menu.append_section(None, section)
+        section = Gio.Menu()
+        section.append(_("_Optimize Audio"), "win.process-audio")
+        menu.append_section(None, section)
         return menu
+
+    def _on_process_audio(self, action: Gio.SimpleAction, value: GLib.Variant):
+        # Saved in the project file; the file monitor reloads the project.
+        if self.recording or self._countdown or not self.project_path:
+            return
+        action.set_state(value)
+        set_audio_processing(self.project_path, value.get_boolean())
+        self.toast(_("Audio optimization on") if value.get_boolean() else _("Audio optimization off: "
+                                                                                  "recordings keep the original sound"))
 
     def _on_mirror(self, action: Gio.SimpleAction, value: GLib.Variant):
         if self.recording or self._countdown:
@@ -340,11 +352,14 @@ class Window(Adw.ApplicationWindow):
                                                    GLib.Variant("s", self.settings.get_string(key)))
             action.connect("change-state", self._on_device, key)
             self.add_action(action)
+        process = Gio.SimpleAction.new_stateful("process-audio", None, GLib.Variant("b", True))
+        process.connect("change-state", self._on_process_audio)
+        self.add_action(process)
         mirror = Gio.SimpleAction.new_stateful("mirror", None,
                                                GLib.Variant("b", self.settings.get_boolean("mirror-camera")))
         mirror.connect("change-state", self._on_mirror)
         self.add_action(mirror)
-        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "mirror"):
+        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "mirror", "process-audio"):
             self.lookup_action(name).set_enabled(False)
 
         for action, accels in {
@@ -390,10 +405,11 @@ class Window(Adw.ApplicationWindow):
             # aspect ratio: no black bands around it.
             self._fitted = True
             self.frame.add_tick_callback(self._fit_when_ready)
-        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone"):
+        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "process-audio"):
             self.lookup_action(name).set_enabled(True)
         self.lookup_action("camera").set_enabled(project.camera is not None)
         self.lookup_action("mirror").set_enabled(project.camera is not None)
+        self.lookup_action("process-audio").set_state(GLib.Variant("b", project.audio.processing))
         self.settings.set_string("last-project", str(path.resolve()))
         # Registered under the application name ("rec0"), used to list recent projects.
         Gtk.RecentManager.get_default().add_item(path.resolve().as_uri())
@@ -563,7 +579,7 @@ class Window(Adw.ApplicationWindow):
         self.timer.remove_css_class("dim-label")
         self.rec_badge.set_visible(True)
         self.preview_edge.add_css_class("recording")
-        for name in ("camera", "microphone", "mirror"):
+        for name in ("camera", "microphone", "mirror", "process-audio"):
             self.lookup_action(name).set_enabled(False)
         self.rec_btn.remove_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-playback-stop-symbolic")
@@ -589,7 +605,7 @@ class Window(Adw.ApplicationWindow):
         self.timer.add_css_class("dim-label")
         self.rec_badge.set_visible(False)
         self.preview_edge.remove_css_class("recording")
-        for name in ("camera", "microphone", "mirror"):
+        for name in ("camera", "microphone", "mirror", "process-audio"):
             self.lookup_action(name).set_enabled(self.project is not None)
         self.rec_btn.add_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-record-symbolic")
@@ -611,7 +627,7 @@ class Window(Adw.ApplicationWindow):
             self.close()
             return
         self._start_preview()
-        if self.project.audio.processing and self.settings.get_boolean("process-audio") and audio.available():
+        if self.project.audio.processing and audio.available():
             self._process_audio(path)
         else:
             self._announce(path)
@@ -926,12 +942,6 @@ class Application(Adw.Application):
                                active=s.get_boolean("show-bubble"))
         bubble.connect("notify::active", lambda r, _p: self._set_bubble_enabled(r.get_active()))
         group.add(bubble)
-        optimize = Adw.SwitchRow(title=_("Optimize Audio"),
-                                 subtitle=_("Reduce noise, even out levels and set the loudness for online video "
-                                            "after recording; the original is kept"),
-                                 active=s.get_boolean("process-audio"))
-        optimize.connect("notify::active", lambda r, _p: s.set_boolean("process-audio", r.get_active()))
-        group.add(optimize)
         page.add(group)
         group = Adw.PreferencesGroup(title=_("Projects"))
         reopen = Adw.SwitchRow(title=_("Reopen Last Project"), subtitle=_("Open the last used project at startup"),

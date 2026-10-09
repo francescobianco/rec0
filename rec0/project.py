@@ -167,6 +167,28 @@ class Project:
         return None
 
 
+def set_audio_processing(path: Path, enabled: bool):
+    """Write audio.processing into a project file, touching only that line
+    (comments and layout are the user's)."""
+    value = "auto" if enabled else "off"
+    lines = path.read_text().splitlines(keepends=True)
+    audio = next((i for i, l in enumerate(lines) if re.match(r"audio\s*:\s*(#.*)?$", l.rstrip("\n"))), None)
+    if audio is None:
+        lines.append(("" if not lines or lines[-1].endswith("\n") else "\n") + f"\naudio:\n  processing: {value}\n")
+    else:
+        end = next((i for i in range(audio + 1, len(lines))
+                    if lines[i].strip() and not lines[i].startswith((" ", "\t", "#"))), len(lines))
+        for i in range(audio + 1, end):
+            m = re.match(r"(\s+processing\s*:\s*)(\S+)(.*)", lines[i].rstrip("\n"))
+            if m:
+                lines[i] = f"{m[1]}{value}{m[3]}\n"
+                break
+        else:
+            indent = next((re.match(r"\s+", l)[0] for l in lines[audio + 1:end] if l.strip()), "  ")
+            lines.insert(audio + 1, f"{indent}processing: {value}\n")
+    path.write_text("".join(lines))
+
+
 def output_directory(directory: str) -> Path:
     if directory:
         return Path(os.path.expandvars(os.path.expanduser(directory)))

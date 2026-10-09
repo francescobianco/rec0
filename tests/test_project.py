@@ -68,3 +68,16 @@ def test_output_path_placeholders(tmp_path):
     from datetime import datetime
     p = parse(base(output={"directory": str(tmp_path), "filename": "{project}-{date}"}))
     assert p.output_path(datetime(2026, 1, 2)) == tmp_path / "demo-2026-01-02.mp4"
+
+
+def test_set_audio_processing_edits_only_that_line(tmp_path):
+    from rec0.project import load, set_audio_processing
+    f = tmp_path / "p.r0"
+    original = "project: x  # mine\ncamera: {device: test}\nwindows: [a]\naudio:\n  microphone: test  # keep\n"
+    f.write_text(original)
+    set_audio_processing(f, False)
+    assert load(f).audio.processing is False
+    assert f.read_text() == original.replace("  microphone: test  # keep\n",
+                                             "  processing: off\n  microphone: test  # keep\n")
+    set_audio_processing(f, True)
+    assert load(f).audio.processing is True and "processing: auto" in f.read_text()
