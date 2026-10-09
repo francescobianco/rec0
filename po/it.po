@@ -158,6 +158,12 @@ msgstr "Sorgenti non disponibili"
 msgid "Automatic scene switching is not available in this session"
 msgstr "Il cambio automatico di scena non è disponibile in questa sessione"
 
+msgid "Log out and back in to record windows one by one: the rec0 extension was updated"
+msgstr "Esci e rientra per registrare le finestre una per una: l'estensione di rec0 è stata aggiornata"
+
+msgid "note: log out and back in to record windows one by one: the rec0 extension was updated"
+msgstr "nota: esci e rientra per registrare le finestre una per una: l'estensione di rec0 è stata aggiornata"
+
 msgid "Enable the rec0 GNOME Shell extension to switch scenes automatically"
 msgstr "Abilita l'estensione di GNOME Shell di rec0 per cambiare scena in automatico"
 

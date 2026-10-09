@@ -453,6 +453,9 @@ class Window(Adw.ApplicationWindow):
         self.mode_buttons["share"].set_sensitive(bool(project.windows))
         auto = self.captures.follows_focus
         self.mode_buttons["auto"].set_sensitive(auto)
+        if auto and not self.captures.per_window and project.windows:
+            # Version 1 still loaded (GNOME Shell loads the new code only at login).
+            self.toast(_("Log out and back in to record windows one by one: the rec0 extension was updated"))
         if auto:
             self.tracker = tracker_for(self.captures, self.director.focus_changed)
             self.tracker.watch = self.director.watched   # presented windows are followed too

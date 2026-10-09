@@ -168,6 +168,8 @@ def cmd_record(args) -> int:
     tracker = tracker_for(captures, director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
     if tracker:
         tracker.watch = director.watched
+    if captures.follows_focus and not captures.per_window and project.windows:
+        print(_("note: log out and back in to record windows one by one: the rec0 extension was updated"))
     if args.scene != "auto":
         director.set_mode(args.scene)
     elif not captures.follows_focus and project.windows and captures.backend == "wayland":
