@@ -216,7 +216,8 @@ def cmd_record(args) -> int:
     rec.on_error = on_error
     rec.on_finished = on_finished
     try:
-        rec.start(director.frame, output)
+        # Warm-up: the webcam settles its exposure before anything is written.
+        rec.start(director.frame, output, warmup=True)
     except RuntimeError as e:
         print(_("error: {message}").format(message=e), file=sys.stderr)
         captures.close()
@@ -239,6 +240,7 @@ def cmd_record(args) -> int:
     print(_("recording to {path} — Ctrl+C to stop").format(path=output))
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, request_stop)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, request_stop)
+    GLib.timeout_add(1500, lambda: rec.begin() and False)
     GLib.timeout_add(500, tick)
     GLib.timeout_add_seconds(10, check_started)
     if args.duration:

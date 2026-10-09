@@ -146,11 +146,14 @@ msgstr "Progetto ricaricato"
 msgid "Could Not Start the Preview"
 msgstr "Impossibile avviare l'anteprima"
 
+msgid "Could Not Record"
+msgstr "Impossibile registrare"
+
 msgid "Cancel"
 msgstr "Annulla"
 
-msgid "Could Not Record"
-msgstr "Impossibile registrare"
+msgid "Starting…"
+msgstr "Avvio…"
 
 msgid "Recording a video"
 msgstr "Registrazione di un video in corso"

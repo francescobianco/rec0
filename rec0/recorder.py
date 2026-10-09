@@ -93,6 +93,9 @@ class Recorder:
         self.output: Path | None = None
         self.recording = False
         self.frame: Frame | None = None
+        self.begun = False
+        self._warmup = False
+        self._t0 = 0
         self._stopping = False
         self._bus_watch = None
         self._camcrop = None
@@ -174,8 +177,12 @@ class Recorder:
         mux = "mp4mux name=mux faststart=true" if o.format == "mp4" else "matroskamux name=mux"
         parts.append(
             f"vt. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 "
+            # Closed during the warm-up (see begin()); formats still reach the muxer.
+            f"! valve name=vrec drop=true drop-mode=forward-sticky-events "
             f"! videoconvert ! video/x-raw,format=I420 ! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
-        parts.append(f"{mux} ! filesink location={q(output)}")
+        # async=false: during the warm-up no data reaches the file, and an async sink
+        # would keep the whole pipeline from reaching PLAYING.
+        parts.append(f"{mux} ! filesink async=false location={q(output)}")
         parts.extend(self._audio(f"{audio_encoder(o.audio_bitrate)} ! aacparse ! queue ! mux."))
         return " ".join(parts)
 
@@ -203,7 +210,8 @@ class Recorder:
                           f"! volume volume={a.desktop_volume}")
         if not inputs:
             return []
-        out = f"audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
+        gate = "valve name=arec drop=true drop-mode=forward-sticky-events ! " if encode else ""
+        out = f"{gate}audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
         if len(inputs) == 1:
             # A single input needs no mixer. audiomixer drops and resyncs buffers that
             # arrive late for its deadline (measured: thousands of 10 ms cuts in the
@@ -341,7 +349,7 @@ class Recorder:
 
     # ---- running ----------------------------------------------------------
 
-    def start(self, frame: Frame, output: Path | None = None):
+    def start(self, frame: Frame, output: Path | None = None, warmup: bool = False):
         """Start recording to `output`, or a preview when output is None."""
         if self.pipeline:
             raise RuntimeError("pipeline already running")
@@ -355,6 +363,9 @@ class Recorder:
         self.frame = frame
         self.output = output
         self.recording = output is not None
+        self.begun = False
+        self._warmup = warmup
+        self._t0 = 0
         self._stopping = False
         self._playing = False
         self._mix = self.pipeline.get_by_name("mix")
@@ -387,6 +398,14 @@ class Recorder:
         if not self.pipeline or self._stopping:
             return
         self._stopping = True
+        if self.recording and not self.begun:
+            # Stopped during the warm-up: nothing was recorded.
+            output = self.output
+            self.recording = False
+            self._finish()
+            if output and output.exists():
+                output.unlink()
+            return
         if self.recording:
             self.pipeline.send_event(Gst.Event.new_eos())
             # imagefreeze ignores EOS from its (already finished) source: end it by hand.
@@ -401,11 +420,31 @@ class Recorder:
         else:
             self._finish()
 
+    def begin(self):
+        """End of the warm-up: the recording starts now, at timestamp zero.
+
+        The pipeline has been running with the encoders' valves closed, so the
+        webcam has settled its exposure and white balance: those seconds are
+        discarded. Opening both valves with the same offset keeps A/V in sync.
+        """
+        if not self.recording or self.begun:
+            return
+        clock = self.pipeline.get_clock()
+        now = clock.get_time() - self.pipeline.get_base_time() if clock else 0
+        self._t0 = now
+        for name in ("vrec", "arec"):
+            valve = self.pipeline.get_by_name(name)
+            if valve is not None:
+                valve.get_static_pad("src").set_offset(-now)
+                valve.set_property("drop", False)
+        self.begun = True
+
     def position(self) -> float:
-        if not self.pipeline:
+        """Seconds recorded (0 during the warm-up)."""
+        if not self.pipeline or (self.recording and not self.begun):
             return 0.0
         ok, pos = self.pipeline.query_position(Gst.Format.TIME)
-        return pos / Gst.SECOND if ok else 0.0
+        return max(0.0, (pos - self._t0) / Gst.SECOND) if ok else 0.0
 
     def _force_stop(self):
         if self.pipeline and self._stopping:
@@ -446,6 +485,8 @@ class Recorder:
         elif t == Gst.MessageType.STATE_CHANGED and msg.src == self.pipeline and not self._playing:
             if msg.parse_state_changed()[1] == Gst.State.PLAYING:
                 self._playing = True
+                if self.recording and not self._warmup:
+                    self.begin()
                 if self.frame:
                     self.apply(self.frame)
         elif t == Gst.MessageType.ERROR and self._window_of(msg.src) is not None:

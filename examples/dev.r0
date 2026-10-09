@@ -19,6 +19,7 @@ windows:
   - match: chrome
   - match: firefox
   - match: gnome-terminal
+  - match: jetbrains-webstorm
 
 audio:
   microphone: default

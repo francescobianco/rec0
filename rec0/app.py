@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from pathlib import Path
 
 import gi
@@ -23,6 +24,8 @@ from .project import EXTENSION, EXTENSIONS, ProjectError, Rect, load, template  
 PROJECT_MIME = "application/x-rec0-project"
 from .recorder import Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
+
+WARMUP = 1.5   # s the recording pipeline runs before writing (webcam exposure settles)
 
 CSS = b"""
 /* The picture is clipped with a larger radius than the edge: a wider curve cuts
@@ -489,48 +492,67 @@ class Window(Adw.ApplicationWindow):
             self.start_recording()
 
     def start_recording(self, countdown: int | None = None):
+        """Start the recording pipeline now and the recording at the end of the countdown.
+
+        The countdown doubles as a warm-up: the webcam is re-opened when the pipeline
+        changes, and its auto-exposure needs a moment (the first frames are burnt
+        out). Those seconds run through the pipeline but are not written.
+        """
         if self.recorder is None or self.recording or self._countdown:
             return
         seconds = self.settings.get_int("countdown") if countdown is None else countdown
-        if seconds <= 0:
-            self._begin_recording()
-            return
-        self.rec_btn.set_icon_name("process-stop-symbolic")
-        self.rec_btn.set_tooltip_text(_("Cancel"))
-        remaining = [seconds]
-
-        def tick():
-            if remaining[0] == 0:
-                self._countdown = None
-                self.countdown_label.set_visible(False)
-                self._begin_recording()
-                return False
-            self.countdown_label.set_label(str(remaining[0]))
-            self.countdown_label.set_visible(True)
-            remaining[0] -= 1
-            return True
-
-        tick()
-        self._countdown = GLib.timeout_add_seconds(1, tick)
-
-    def _cancel_countdown(self):
-        GLib.source_remove(self._countdown)
-        self._countdown = None
-        self.countdown_label.set_visible(False)
-        self._set_idle_ui()
-
-    def _begin_recording(self):
         rec = self.recorder
-        output = self.project.output_path()
         if rec.pipeline:
             rec.stop()   # preview: stops synchronously, releasing the webcam
         try:
-            rec.start(self.director.frame, output)
+            rec.start(self.director.frame, self.project.output_path(), warmup=True)
         except (RuntimeError, CaptureError) as e:
             self.alert(_("Could Not Record"), str(e))
             self._set_idle_ui()
             self._start_preview()
             return
+        self.rec_btn.set_icon_name("process-stop-symbolic")
+        self.rec_btn.set_tooltip_text(_("Cancel"))
+        self.status.set_label(_("Starting…"))
+        started = time.monotonic()
+        remaining = [seconds]
+
+        def go():
+            # At least WARMUP seconds, even with a short or no countdown.
+            left = WARMUP - (time.monotonic() - started)
+            if left > 0.05:
+                self._countdown = GLib.timeout_add(int(left * 1000), go)
+                return False
+            self._countdown = None
+            self.countdown_label.set_visible(False)
+            self._begin_recording()
+            return False
+
+        def tick():
+            if remaining[0] == 0:
+                return go()
+            self.countdown_label.set_label(str(remaining[0]))
+            self.countdown_label.set_visible(True)
+            remaining[0] -= 1
+            return True
+
+        if seconds > 0:
+            tick()
+            self._countdown = GLib.timeout_add_seconds(1, tick)
+        else:
+            self._countdown = GLib.timeout_add(int(WARMUP * 1000), go)
+
+    def _cancel_countdown(self):
+        GLib.source_remove(self._countdown)
+        self._countdown = None
+        self.countdown_label.set_visible(False)
+        if self.recording:
+            self.recorder.stop()   # still warming up: nothing is kept
+        self._set_idle_ui()
+        self._start_preview()
+
+    def _begin_recording(self):
+        self.recorder.begin()
         self._inhibit_cookie = self.get_application().inhibit(
             self, Gtk.ApplicationInhibitFlags.SUSPEND | Gtk.ApplicationInhibitFlags.IDLE
             | Gtk.ApplicationInhibitFlags.LOGOUT, _("Recording a video"))
