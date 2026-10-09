@@ -48,7 +48,7 @@ CAMERA_Z = 1000                 # above every window layer
 # when focus moves to a private page the screen layer is frozen before any of
 # its frames can be composed (focus is polled every 100 ms).
 SCREEN_DELAY = 0.4
-OUTRO = 0.7                     # s of the closing (CRT power-off)
+OUTRO = 1.0                     # s recorded after stop, on which the closing (CRT power-off) plays
 BUBBLE_FPS = 20
 
 
@@ -97,12 +97,11 @@ class Recorder:
         self.output: Path | None = None
         self.recording = False
         self.frame: Frame | None = None
-        self.begun = False
+        self._begin_rt = None
+        self._pending_begin = None
         self._outro = None
         self._eos_sent = False
         self._outro_size = (0, 0)
-        self._warmup = False
-        self._t0 = 0
         self._stopping = False
         self._bus_watch = None
         self._camcrop = None
@@ -185,8 +184,8 @@ class Recorder:
         mux = "mp4mux name=mux faststart=true" if o.format == "mp4" else "matroskamux name=mux"
         parts.append(
             f"vt. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 "
-            # Closed during the warm-up (see begin()); formats still reach the muxer.
-            f"! valve name=vrec drop=true drop-mode=forward-sticky-events "
+            # Frames before the scheduled start are dropped here (see schedule_begin()).
+            f"! identity name=vrec "
             f"! videoconvert ! video/x-raw,format=I420 ! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
         # async=false: during the warm-up no data reaches the file, and an async sink
         # would keep the whole pipeline from reaching PLAYING.
@@ -218,7 +217,7 @@ class Recorder:
                           f"! volume volume={a.desktop_volume}")
         if not inputs:
             return []
-        gate = "valve name=arec drop=true drop-mode=forward-sticky-events ! " if encode else ""
+        gate = "identity name=arec ! " if encode else ""
         fade = "volume name=outrovol ! " if encode else ""   # faded out with the closing
         out = f"{fade}{gate}audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
         if len(inputs) == 1:
@@ -372,12 +371,11 @@ class Recorder:
         self.frame = frame
         self.output = output
         self.recording = output is not None
-        self.begun = False
+        self._begin_rt = None
+        self._pending_begin = None if warmup else 0.0
         self._outro = None
         self._eos_sent = False
         self._outro_size = (self.project.width, self.project.height)
-        self._warmup = warmup
-        self._t0 = 0
         self._stopping = False
         self._playing = False
         self._mix = self.pipeline.get_by_name("mix")
@@ -392,6 +390,10 @@ class Recorder:
         bubblesink = self.pipeline.get_by_name("bubblesink")
         if bubblesink is not None:
             bubblesink.connect("new-sample", self._on_bubble_sample)
+        for name in ("vrec", "arec"):
+            el = self.pipeline.get_by_name(name)
+            if el is not None:
+                el.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, self._gate)
         outro = self.pipeline.get_by_name("outro")
         if outro is not None:
             outro.connect("caps-changed", self._on_outro_caps)
@@ -523,31 +525,52 @@ class Recorder:
         cr.arc(w / 2, h / 2, r, 0, 2 * math.pi)
         cr.fill()
 
-    def begin(self):
-        """End of the warm-up: the recording starts now, at timestamp zero.
+    def now(self) -> int:
+        """Current running time of the pipeline (ns), the timeline buffers are stamped on."""
+        clock = self.pipeline.get_clock() if self.pipeline else None
+        return clock.get_time() - self.pipeline.get_base_time() if clock else 0
 
-        The pipeline has been running with the encoders' valves closed, so the
-        webcam has settled its exposure and white balance: those seconds are
-        discarded. Opening both valves with the same offset keeps A/V in sync.
+    def begin_after(self, seconds: float):
+        """Start writing `seconds` from now (from PLAYING, if not there yet).
+
+        Until then the pipeline runs unwritten (warm-up: the webcam settles its
+        exposure). The start is exact to the frame: buffers stamped before it are
+        dropped, and both streams are shifted to start at zero.
         """
-        if not self.recording or self.begun:
+        if self._playing:
+            self.schedule_begin(self.now() + int(seconds * Gst.SECOND))
+        else:
+            self._pending_begin = seconds
+
+    def schedule_begin(self, at: int):
+        if not self.recording or self._begin_rt is not None:
             return
-        clock = self.pipeline.get_clock()
-        now = clock.get_time() - self.pipeline.get_base_time() if clock else 0
-        self._t0 = now
+        self._begin_rt = at
         for name in ("vrec", "arec"):
-            valve = self.pipeline.get_by_name(name)
-            if valve is not None:
-                valve.get_static_pad("src").set_offset(-now)
-                valve.set_property("drop", False)
-        self.begun = True
+            el = self.pipeline.get_by_name(name)
+            if el is not None:
+                el.get_static_pad("src").set_offset(-at)
+
+    @property
+    def begin_time(self) -> int | None:
+        """Running time (ns) the recording starts at, once scheduled."""
+        return self._begin_rt
+
+    @property
+    def begun(self) -> bool:
+        return self._begin_rt is not None and self.now() >= self._begin_rt
+
+    def _gate(self, _pad, info):
+        buf = info.get_buffer()
+        if self._begin_rt is None or buf.pts == Gst.CLOCK_TIME_NONE or buf.pts < self._begin_rt:
+            return Gst.PadProbeReturn.DROP
+        return Gst.PadProbeReturn.OK
 
     def position(self) -> float:
         """Seconds recorded (0 during the warm-up)."""
-        if not self.pipeline or (self.recording and not self.begun):
+        if not self.pipeline or not self.recording or self._begin_rt is None:
             return 0.0
-        ok, pos = self.pipeline.query_position(Gst.Format.TIME)
-        return max(0.0, (pos - self._t0) / Gst.SECOND) if ok else 0.0
+        return max(0.0, (self.now() - self._begin_rt) / Gst.SECOND)
 
     def _force_stop(self):
         if self.pipeline and self._stopping:
@@ -588,8 +611,8 @@ class Recorder:
         elif t == Gst.MessageType.STATE_CHANGED and msg.src == self.pipeline and not self._playing:
             if msg.parse_state_changed()[1] == Gst.State.PLAYING:
                 self._playing = True
-                if self.recording and not self._warmup:
-                    self.begin()
+                if self.recording and self._pending_begin is not None:
+                    self.begin_after(self._pending_begin)
                 if self.frame:
                     self.apply(self.frame)
         elif t == Gst.MessageType.ERROR and self._window_of(msg.src) is not None:
@@ -639,7 +662,7 @@ class Recorder:
         if ok:
             data = bytes(info.data)
             buf.unmap(info)
-            GLib.idle_add(self._deliver_frame, data, w, h)
+            GLib.idle_add(self._deliver_frame, data, w, h, buf.pts)
         return Gst.FlowReturn.OK
 
     def _on_bubble_sample(self, sink):
@@ -708,9 +731,9 @@ class Recorder:
         cr.set_operator(cairo.OPERATOR_OVER)
         draw_ring(cr, d)
 
-    def _deliver_frame(self, data, w, h):
+    def _deliver_frame(self, data, w, h, pts):
         if self.on_preview and self.pipeline:
-            self.on_preview(data, w, h)
+            self.on_preview(data, w, h, pts)
         return False
 
     @staticmethod

@@ -37,6 +37,7 @@ CSS = b"""
 .preview-edge { border: 3px solid shade(@window_bg_color, 0.75); border-radius: 12px; transition: border-color 200ms ease-out; }
 .preview-edge.recording { border-color: #e01b24; }
 .rec-idle { color: @error_color; }
+.start-flash { background: white; }
 .timer { font-feature-settings: "tnum"; font-weight: 600; }
 .recording { color: @error_color; }
 .rec-badge { background: rgba(0, 0, 0, 0.6); color: white; border-radius: 6px; padding: 2px 8px;
@@ -217,6 +218,8 @@ class Window(Adw.ApplicationWindow):
         inner = Gtk.Overlay(child=self.picture)
         inner.add_overlay(self.countdown_label)
         inner.add_overlay(self.rec_badge)
+        self.flash = Gtk.Box(css_classes=["start-flash"], can_target=False, visible=False)
+        inner.add_overlay(self.flash)
         clip = Gtk.Box(css_classes=["preview"], overflow=Gtk.Overflow.HIDDEN)
         inner.set_hexpand(True)
         clip.append(inner)
@@ -308,7 +311,7 @@ class Window(Adw.ApplicationWindow):
 
     def _on_process_audio(self, action: Gio.SimpleAction, value: GLib.Variant):
         # Saved in the project file; the file monitor reloads the project.
-        if self.recording or self._countdown or not self.project_path:
+        if self.recording or self._countdown is not None or not self.project_path:
             return
         action.set_state(value)
         set_audio_processing(self.project_path, value.get_boolean())
@@ -316,7 +319,7 @@ class Window(Adw.ApplicationWindow):
                                                                                   "recordings keep the original sound"))
 
     def _on_mirror(self, action: Gio.SimpleAction, value: GLib.Variant):
-        if self.recording or self._countdown:
+        if self.recording or self._countdown is not None:
             return
         action.set_state(value)
         self.settings.set_boolean("mirror-camera", value.get_boolean())
@@ -324,7 +327,7 @@ class Window(Adw.ApplicationWindow):
             self.load_project(self.project_path)
 
     def _on_device(self, action: Gio.SimpleAction, value: GLib.Variant, key: str):
-        if self.recording or self._countdown:
+        if self.recording or self._countdown is not None:
             return
         action.set_state(value)
         self.settings.set_string(key, value.get_string())
@@ -500,7 +503,7 @@ class Window(Adw.ApplicationWindow):
         return bool(self.recorder and self.recorder.recording)
 
     def toggle_record(self):
-        if self._countdown:
+        if self._countdown is not None:
             self._cancel_countdown()
         elif self.recording:
             self.stop_recording()
@@ -508,13 +511,15 @@ class Window(Adw.ApplicationWindow):
             self.start_recording()
 
     def start_recording(self, countdown: int | None = None):
-        """Start the recording pipeline now and the recording at the end of the countdown.
+        """Start the recording pipeline now, and the recording at the end of the countdown.
 
-        The countdown doubles as a warm-up: the webcam is re-opened when the pipeline
-        changes, and its auto-exposure needs a moment (the first frames are burnt
-        out). Those seconds run through the pipeline but are not written.
+        The countdown doubles as a warm-up: re-opening the webcam resets its
+        auto-exposure (burnt-out first frames). The pipeline runs unwritten until
+        the scheduled start; the countdown digits and a flash marking the real
+        start follow the preview's own timestamps (it shows frames a little late),
+        so what you see and what is recorded agree.
         """
-        if self.recorder is None or self.recording or self._countdown:
+        if self.recorder is None or self.recording or self._countdown is not None:
             return
         seconds = self.settings.get_int("countdown") if countdown is None else countdown
         rec = self.recorder
@@ -527,39 +532,46 @@ class Window(Adw.ApplicationWindow):
             self._set_idle_ui()
             self._start_preview()
             return
+        rec.begin_after(max(seconds, WARMUP))
+        self._countdown = max(seconds, 0)
         self.rec_btn.set_icon_name("process-stop-symbolic")
         self.rec_btn.set_tooltip_text(_("Cancel"))
         self.status.set_label(_("Starting…"))
-        started = time.monotonic()
-        remaining = [seconds]
 
-        def go():
-            # At least WARMUP seconds, even with a short or no countdown.
-            left = WARMUP - (time.monotonic() - started)
-            if left > 0.05:
-                self._countdown = GLib.timeout_add(int(left * 1000), go)
+    def _follow_countdown(self, pts: int):
+        """Countdown digits and start flash, in the preview's time."""
+        start = self.recorder.begin_time
+        if start is None:
+            return
+        left = (start - pts) / 1e9
+        if left > 0:
+            digit = math.ceil(left)
+            visible = digit <= self._countdown
+            self.countdown_label.set_label(str(digit))
+            self.countdown_label.set_visible(visible)
+            return
+        self._countdown = None
+        self.countdown_label.set_visible(False)
+        self._flash()
+        self._begin_recording()
+
+    def _flash(self):
+        """A white flash over the preview only: the recording starts now."""
+        self.flash.set_visible(True)
+        t0 = time.monotonic()
+
+        def fade():
+            t = (time.monotonic() - t0) / 0.35
+            self.flash.set_opacity(max(0.0, 0.85 * (1 - t)))
+            if t >= 1:
+                self.flash.set_visible(False)
                 return False
-            self._countdown = None
-            self.countdown_label.set_visible(False)
-            self._begin_recording()
-            return False
-
-        def tick():
-            if remaining[0] == 0:
-                return go()
-            self.countdown_label.set_label(str(remaining[0]))
-            self.countdown_label.set_visible(True)
-            remaining[0] -= 1
             return True
 
-        if seconds > 0:
-            tick()
-            self._countdown = GLib.timeout_add_seconds(1, tick)
-        else:
-            self._countdown = GLib.timeout_add(int(WARMUP * 1000), go)
+        fade()
+        GLib.timeout_add(16, fade)
 
     def _cancel_countdown(self):
-        GLib.source_remove(self._countdown)
         self._countdown = None
         self.countdown_label.set_visible(False)
         if self.recording:
@@ -568,7 +580,6 @@ class Window(Adw.ApplicationWindow):
         self._start_preview()
 
     def _begin_recording(self):
-        self.recorder.begin()
         self._inhibit_cookie = self.get_application().inhibit(
             self, Gtk.ApplicationInhibitFlags.SUSPEND | Gtk.ApplicationInhibitFlags.IDLE
             | Gtk.ApplicationInhibitFlags.LOGOUT, _("Recording a video"))
@@ -683,7 +694,9 @@ class Window(Adw.ApplicationWindow):
         if self.last_recording:
             Gtk.FileLauncher(file=Gio.File.new_for_path(str(self.last_recording))).launch(self, None, None)
 
-    def _on_preview(self, data: bytes, w: int, h: int):
+    def _on_preview(self, data: bytes, w: int, h: int, pts: int = 0):
+        if self._countdown is not None and self.recording:
+            self._follow_countdown(pts)
         stride = (w * 3 + 3) // 4 * 4   # GStreamer aligns RGB rows to 4 bytes
         tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8, GLib.Bytes.new(data), stride)
         self.picture.set_paintable(tex)
@@ -804,7 +817,7 @@ class Window(Adw.ApplicationWindow):
         win.present()
 
     def _on_close(self, *_args):
-        if self._countdown:
+        if self._countdown is not None:
             self._cancel_countdown()
         if self.recording:
             self._close_after_stop = True

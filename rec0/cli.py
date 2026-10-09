@@ -240,7 +240,7 @@ def cmd_record(args) -> int:
     print(_("recording to {path} — Ctrl+C to stop").format(path=output))
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, request_stop)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, request_stop)
-    GLib.timeout_add(1500, lambda: rec.begin() and False)
+    rec.begin_after(1.5)   # warm-up: the webcam settles before anything is written
     GLib.timeout_add(500, tick)
     GLib.timeout_add_seconds(10, check_started)
     if args.duration:

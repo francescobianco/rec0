@@ -161,7 +161,7 @@ class DevApi:
             "project_path": str(win.project_path) if win.project_path else None,
             "status": win.status.get_label(),
             "recording": win.recording,
-            "countdown": bool(win._countdown),
+            "countdown": win._countdown is not None,
             "position": round(win.recorder.position(), 2) if win.recording else 0,
             "pipeline": win.recorder is not None and win.recorder.pipeline is not None,
             "scene": d.scene if d else None,
@@ -211,7 +211,7 @@ class DevApi:
             win.stop_recording()
         else:
             win.toggle_record()
-        return {"recording": win.recording, "countdown": bool(win._countdown)}
+        return {"recording": win.recording, "countdown": win._countdown is not None}
 
     def post_scene(self, body):
         self.win.activate_action("win.scene", GLib.Variant("s", body["mode"]))
