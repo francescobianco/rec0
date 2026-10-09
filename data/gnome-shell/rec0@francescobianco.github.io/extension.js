@@ -12,11 +12,15 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const BUS_NAME = 'io.github.francescobianco.Rec0.Shell';
 const OBJECT_PATH = '/io/github/francescobianco/Rec0/Shell';
-const VERSION = 1;
+const VERSION = 2;
 
 const IFACE = `<node>
   <interface name="io.github.francescobianco.Rec0.Shell">
     <method name="GetFocus">
+      <arg type="a{sv}" direction="out" name="window"/>
+    </method>
+    <method name="GetWindow">
+      <arg type="t" direction="in" name="id"/>
       <arg type="a{sv}" direction="out" name="window"/>
     </method>
     <signal name="FocusChanged">
@@ -38,6 +42,7 @@ function describe(win) {
     if (!win)
         return {};
     const r = win.get_frame_rect();
+    const b = win.get_buffer_rect();   // with the client-side shadows
     // is_maximized() replaces the two properties in newer Mutter.
     const maximized = win.is_maximized?.() ?? (win.maximized_horizontally && win.maximized_vertically);
     return {
@@ -48,6 +53,10 @@ function describe(win) {
         y: new GLib.Variant('i', r.y),
         width: new GLib.Variant('i', r.width),
         height: new GLib.Variant('i', r.height),
+        buffer_x: new GLib.Variant('i', b.x),
+        buffer_y: new GLib.Variant('i', b.y),
+        buffer_width: new GLib.Variant('i', b.width),
+        buffer_height: new GLib.Variant('i', b.height),
         fullscreen: new GLib.Variant('b', win.is_fullscreen() || maximized),
         minimized: new GLib.Variant('b', win.minimized),
     };
@@ -82,6 +91,12 @@ export default class Rec0Extension extends Extension {
 
     GetFocus() {
         return describe(this._window);
+    }
+
+    // A window rec0 shows, followed while it is not focused (empty: closed).
+    GetWindow(id) {
+        const win = global.get_window_actors().map(a => a.meta_window).find(w => w.get_id() === id);
+        return describe(win ?? null);
     }
 
     _follow() {

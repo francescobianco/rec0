@@ -159,12 +159,18 @@ class Project:
         return output_directory(self.output.directory) / name
 
     def match_window(self, title: str, wm_class: str) -> Window | None:
-        t, c = title.casefold(), wm_class.casefold()
+        # Classes are compared without separators: on Wayland the class is the app id,
+        # so "gnome-terminal" must also match "org.gnome.Terminal".
+        t, c = title.casefold(), _bare(wm_class)
         for w in self.windows:
             needle = w.match.casefold()
-            if needle in t or needle in c:
+            if needle in t or (_bare(needle) and _bare(needle) in c):
                 return w
         return None
+
+
+def _bare(name: str) -> str:
+    return re.sub(r"[^0-9a-z]", "", name.casefold())
 
 
 def set_audio_processing(path: Path, enabled: bool):

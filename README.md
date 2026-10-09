@@ -278,17 +278,16 @@ only and works without a webcam.
 
 - **X11**: fully automatic. rec0 captures each window with `ximagesrc` and
   reads focus and geometry straight from Xlib.
-- **Wayland**: the screen is captured through the XDG Desktop Portal and
-  PipeWire. The first time, GNOME asks which screen to share; the permission
-  is remembered (`rec0 forget` resets it). Wayland does not let applications
-  know which window has focus: rec0 ships a small **GNOME Shell extension**
-  that tells it, and with it scenes switch on their own (and private pages
-  freeze the video) as on X11. The share scene shows the whole screen. The
+- **Wayland (GNOME)**: Wayland does not let applications see other windows.
+  rec0 ships a small **GNOME Shell extension** that tells it which window has
+  the focus and where windows are; each shared window is then recorded on its
+  own through Mutter's screencast API, with no dialog, exactly as on X11. The
   extension is installed with rec0; enable it in *Extensions* (or with
   `make shell-extension` from the source tree) and log out and back in once.
-  It publishes the focused window's title, class and geometry on your session
-  bus (`io.github.francescobianco.Rec0.Shell`). Without it, scenes are
-  switched by hand.
+  It publishes window titles, classes and geometry on your session bus
+  (`io.github.francescobianco.Rec0.Shell`). Without it, rec0 records the whole
+  screen through the XDG Desktop Portal (GNOME asks which screen the first
+  time; `rec0 forget` resets it) and scenes are switched by hand.
 
 ## Development
 

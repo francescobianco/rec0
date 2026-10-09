@@ -12,6 +12,14 @@ All notable changes to rec0 are documented here. The format follows
   with rec0, tells it which window has the focus. Scenes follow the focus and
   private pages freeze the screen as on X11 (`make shell-extension` installs
   and enables it from the source tree).
+- Windows recorded one by one on Wayland too: with version 2 of the GNOME
+  Shell extension each shared window is captured on its own through Mutter's
+  screencast API (no dialog, no whole desktop, rec0's own window never shows),
+  followed as it moves, resizes or closes. With the first version of the
+  extension rec0 falls back to the whole screen.
+- On Wayland a window's class is its app id: `match: gnome-terminal` now
+  also matches `org.gnome.Terminal` (separators are ignored), and privacy
+  rules recognise Flatpak and Wayland ids such as `org.mozilla.Thunderbird`.
 - When the whole screen is shared (Wayland) and its shape differs from the
   video's (a 16:10 laptop in a 16:9 video), it is framed with rounded corners
   like a shared window, between the bands of background.

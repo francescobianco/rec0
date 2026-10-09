@@ -165,7 +165,7 @@ def cmd_record(args) -> int:
         "\r\033[K" + _("scene: {scene}").format(scene=scene_label(scene)) + (f" — {title}" if title else "")))
     result = {"code": 0}
     bubble = None
-    tracker = tracker_for(captures.backend, director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
+    tracker = tracker_for(captures, director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
     if tracker:
         tracker.watch = director.watched
     if args.scene != "auto":

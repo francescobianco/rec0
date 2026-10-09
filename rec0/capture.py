@@ -379,7 +379,8 @@ class Captures:
         self.area: Rect | None = None         # its usable part (without panels): the virtual desktop
         self.portal: PortalSession | None = None
         self.prepared = False
-        self._shell: bool | None = None       # the GNOME Shell extension is running (Wayland)
+        self._shell: int | None = None        # version of the running GNOME Shell extension (Wayland)
+        self.casts: dict = {}                 # Wayland: window id -> shell.WindowCast
 
     @property
     def follows_focus(self) -> bool:
@@ -388,11 +389,30 @@ class Captures:
         if self.project.screen.monitor == "test" or not self.project.windows:
             return False
         if self.backend == "wayland":
-            if self._shell is None:
-                from . import shell
-                self._shell = shell.available()
-            return self._shell
+            return self._shell_version() > 0
         return self.backend == "x11"
+
+    @property
+    def per_window(self) -> bool:
+        """Whether windows are captured one by one (otherwise the whole screen is shown):
+        X11, and Wayland with version 2 of the extension (through Mutter)."""
+        if self.project.screen.monitor == "test" or self.backend == "x11":
+            return True
+        from .shell import PER_WINDOW_VERSION
+        return self.backend == "wayland" and self._shell_version() >= PER_WINDOW_VERSION
+
+    def _shell_version(self) -> int:
+        if self._shell is None:
+            from . import shell
+            self._shell = shell.version() if shell.available() else 0
+        return self._shell
+
+    @property
+    def canvas(self) -> tuple[int, int] | None:
+        """Size of a Mutter window stream: the monitor (Wayland, see shell.window_from)."""
+        if self.backend == "wayland" and self.monitor and self.project.screen.monitor != "test":
+            return self.monitor.width, self.monitor.height
+        return None
 
     def launch_apps(self):
         for item in self.project.launch:
@@ -430,8 +450,16 @@ class Captures:
         spec = self.project.screen.monitor
         if spec == "test":
             return self.TEST_MONITOR
-        if self.backend == "x11":
-            mons = x11_monitors()
+        if self.backend == "x11" or (self.backend == "wayland" and self.per_window):
+            # Wayland with windows captured one by one: Mutter knows the monitors, no dialog.
+            if self.backend == "x11":
+                mons = x11_monitors()
+            else:
+                from . import shell
+                try:
+                    mons = shell.monitors()
+                except GLib.Error:
+                    mons = []
             if not mons:
                 raise CaptureError(_("cannot determine the monitor geometry"))
             if spec == "primary":
@@ -468,11 +496,37 @@ class Captures:
             c = win.area
             return (f"videotestsrc is-live=true pattern={'ball' if win.xid % 2 else 'smpte'} "
                     f"! video/x-raw,width={c.width + gl + gr},height={c.height + gt + gb},framerate={self.project.fps}/1")
+        if self.backend == "wayland":
+            return self._cast_source(win)
         if self.backend != "x11":
             return None
         # The pointer is drawn by the recorder (see Recorder._on_pointer_draw): ximagesrc
         # blends it wrongly and draws a hidden pointer as a grey square.
         return f"ximagesrc xid={win.xid} use-damage=false show-pointer=false"
+
+    def _cast_source(self, win) -> str | None:
+        """The window recorded by Mutter, on its own even when covered (Wayland)."""
+        if not self.per_window:
+            return None
+        cast = self.casts.get(win.xid)
+        if cast is None:
+            from .shell import WindowCast
+            cast = WindowCast(win.xid, self.project.screen.cursor)
+            try:
+                cast.open()
+            except GLib.Error as e:
+                self.log(_("cannot capture '{title}': {error}").format(title=win.title, error=e.message))
+                return None
+            self.casts[win.xid] = cast
+        # keepalive: a window that does not change sends no frames; repeat the last one.
+        return (f"pipewiresrc path={cast.node_id} do-timestamp=true "
+                f"keepalive-time={max(1, 1000 // self.project.fps)} always-copy=true")
+
+    def release_window(self, key: int):
+        """The window left the presentation: stop its stream."""
+        cast = self.casts.pop(key, None)
+        if cast:
+            cast.close()
 
     def screen_source(self) -> str | None:
         if self.monitor is None:
@@ -485,12 +539,17 @@ class Captures:
             cursor = "true" if self.project.screen.cursor else "false"
             return (f"ximagesrc use-damage=false show-pointer={cursor} startx={m.x} starty={m.y} "
                     f"endx={m.x + m.width - 1} endy={m.y + m.height - 1}")
+        if self.portal is None:
+            return None   # Wayland with windows captured one by one: no whole-screen stream
         # pipewiresrc takes ownership of the fd, so hand each pipeline its own copy.
         fd = os.dup(self.portal.fd)
         return (f"pipewiresrc fd={fd} path={self.portal.node_id} do-timestamp=true "
                 f"keepalive-time={max(1, 1000 // fps)} always-copy=true")
 
     def close(self):
+        for cast in self.casts.values():
+            cast.close()
+        self.casts.clear()
         if self.portal:
             self.portal.close()
             self.portal = None

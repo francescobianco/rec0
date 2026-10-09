@@ -889,8 +889,8 @@ class Director:
 
     @property
     def per_window(self) -> bool:
-        """X11 (and test) capture windows one by one; otherwise the whole area is shown."""
-        return self.captures.backend == "x11" or self.project.screen.monitor == "test"
+        """Windows captured one by one (X11, Wayland through Mutter); otherwise the whole area."""
+        return self.captures.per_window
 
     @property
     def area(self) -> Rect | None:
@@ -999,6 +999,7 @@ class Director:
         self.watched.add(key)
 
     def _forget(self, key: int):
+        self.captures.release_window(key)
         self.windows.pop(key, None)
         self.revealed.discard(key)
         self.watched.discard(key)

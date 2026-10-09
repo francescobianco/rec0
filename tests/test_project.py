@@ -123,3 +123,19 @@ def test_set_option_leaves_inline_sections_alone(tmp_path):
     f.write_text("camera:\n  bubble: {size: 200}\n")
     assert not set_option(f, ("camera", "bubble", "size"), "260")
     assert f.read_text() == "camera:\n  bubble: {size: 200}\n"
+
+
+def test_window_class_matches_wayland_app_ids():
+    p = parse(base(windows=["gnome-terminal", "jetbrains-webstorm"]))
+    assert p.match_window("francesco@Yoga7: ~", "gnome-terminal-server Gnome-terminal")   # X11
+    assert p.match_window("francesco@Yoga7: ~", "org.gnome.Terminal")                     # Wayland
+    assert p.match_window("rec0 – app.py", "jetbrains-webstorm")
+    assert p.match_window("Notes", "org.gnome.TextEditor") is None
+
+
+def test_privacy_recognises_app_ids():
+    p = parse(base())
+    for app_id in ("org.mozilla.Thunderbird", "com.slack.Slack", "org.signal.Signal", "com.discordapp.Discord"):
+        assert p.private("anything", app_id) is not None, app_id
+    assert p.private("~", "org.gnome.Terminal") is None
+    assert p.private("capture", "org.wireshark.Wireshark") is None    # "wire" is not Wireshark

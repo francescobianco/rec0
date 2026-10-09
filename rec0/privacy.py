@@ -22,6 +22,9 @@ class Rule:
             # Whole class names (or their prefix: "thunderbird_thunderbird"), never a
             # substring: "wire" must not catch Wireshark.
             names = wm_class.casefold().split()
+            # Wayland and Flatpak: the class is an app id; its last part names the app
+            # ("org.mozilla.Thunderbird", "com.slack.Slack").
+            names += [n.rsplit(".", 1)[1] for n in names if "." in n.strip(".")]
             return any(n == c or n.startswith((c + "_", c + "-", c + ".")) or (" " in c and c in wm_class.casefold())
                        for c in (x.casefold() for x in self.classes) for n in names)
         t = title.casefold()

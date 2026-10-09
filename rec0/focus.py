@@ -12,11 +12,11 @@ from .x11 import X11, FocusedWindow, active_window
 __all__ = ["FocusedWindow", "FocusTracker", "active_window", "tracker_for"]
 
 
-def tracker_for(backend: str, callback: Callable):
-    """The focus tracker for a capture backend (see Captures.follows_focus)."""
-    if backend == "wayland":
+def tracker_for(captures, callback: Callable):
+    """The focus tracker for the capture backend (see Captures.follows_focus)."""
+    if captures.backend == "wayland":
         from .shell import ShellFocusTracker
-        return ShellFocusTracker(callback)
+        return ShellFocusTracker(callback, captures.canvas)
     return FocusTracker(callback)
 
 

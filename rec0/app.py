@@ -454,7 +454,7 @@ class Window(Adw.ApplicationWindow):
         auto = self.captures.follows_focus
         self.mode_buttons["auto"].set_sensitive(auto)
         if auto:
-            self.tracker = tracker_for(self.captures.backend, self.director.focus_changed)
+            self.tracker = tracker_for(self.captures, self.director.focus_changed)
             self.tracker.watch = self.director.watched   # presented windows are followed too
             self.tracker.start()
         elif project.windows and self.captures.backend == "wayland":
