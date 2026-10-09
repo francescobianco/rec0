@@ -20,6 +20,9 @@ from pathlib import Path
 
 import yaml
 
+from . import privacy
+from .i18n import N_, _, pkgdata
+
 POSITIONS = (
     "top-left", "top", "top-right",
     "left", "center", "right",
@@ -35,7 +38,7 @@ RESOLUTION_PRESETS = {
     "4k": (3840, 2160),
 }
 DEFAULT_MARGIN = 24
-DEFAULT_BACKGROUND = Path(__file__).resolve().parent.parent / "assets" / "background.jpg"
+DEFAULT_BACKGROUND = pkgdata("background.jpg")
 
 
 class ProjectError(Exception):
@@ -103,7 +106,7 @@ class Audio:
 
 @dataclass
 class Output:
-    directory: str = "~/Videos"
+    directory: str = ""         # empty: the XDG Videos folder, in a "rec0" subfolder
     filename: str = "{project}-{timestamp}.{format}"
     format: str = "mp4"
     video_bitrate: int = 6000   # kbit/s
@@ -132,6 +135,11 @@ class Project:
     output: Output
     transition: float = 0.3          # seconds
     launch: list[Launch] = field(default_factory=list)
+    privacy: tuple[privacy.Rule, ...] = privacy.BUILTIN
+
+    def private(self, title: str) -> privacy.Rule | None:
+        """The privacy rule hiding a window with this title, if any."""
+        return privacy.check(self.privacy, title)
 
     def output_path(self, now: datetime | None = None) -> Path:
         now = now or datetime.now()
@@ -143,7 +151,7 @@ class Project:
         )
         if not name.endswith("." + self.output.format):
             name += "." + self.output.format
-        return Path(os.path.expandvars(os.path.expanduser(self.output.directory))) / name
+        return output_directory(self.output.directory) / name
 
     def match_window(self, title: str, wm_class: str) -> Window | None:
         t, c = title.casefold(), wm_class.casefold()
@@ -154,21 +162,30 @@ class Project:
         return None
 
 
+def output_directory(directory: str) -> Path:
+    if directory:
+        return Path(os.path.expandvars(os.path.expanduser(directory)))
+    from gi.repository import GLib
+
+    videos = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS)
+    return Path(videos or Path.home() / "Videos") / "rec0"
+
+
 def load(path: str | os.PathLike) -> Project:
     path = Path(path)
     try:
         data = yaml.safe_load(path.read_text())
     except OSError as e:
-        raise ProjectError([f"impossibile leggere {path}: {e.strerror}"]) from e
+        raise ProjectError([_("cannot read {path}: {error}").format(path=path, error=e.strerror)]) from e
     except yaml.YAMLError as e:
-        raise ProjectError([f"YAML non valido: {e}"]) from e
+        raise ProjectError([_("invalid YAML: {error}").format(error=e)]) from e
     return parse(data, path)
 
 
 def parse(data, path: Path | None = None) -> Project:
     errors: list[str] = []
     if not isinstance(data, dict):
-        raise ProjectError(["il file di progetto deve essere una mappa YAML"])
+        raise ProjectError([_("the project file must be a YAML mapping")])
 
     base = path.parent if path else Path.cwd()
     name = str(data.get("project") or (path.stem if path else "rec0"))
@@ -184,7 +201,7 @@ def parse(data, path: Path | None = None) -> Project:
     if _color(background) is None and background not in ("black", "white"):
         bg_path = _resolve(background, base)
         if not bg_path.exists():
-            errors.append(f"background: '{background}' non è un colore (#RRGGBB) né un'immagine esistente")
+            errors.append(_("background: '{value}' is neither a color (#RRGGBB) nor an existing image").format(value=background))
         background = str(bg_path)
 
     camera = _camera(data.get("camera", {}), canvas, errors)
@@ -196,12 +213,12 @@ def parse(data, path: Path | None = None) -> Project:
         cursor=bool(raw_screen.get("cursor", True)),
     )
     if screen.margin * 2 >= min(width, height):
-        errors.append("screen.margin: troppo grande per la risoluzione")
+        errors.append(_("screen.margin: too large for the resolution"))
 
     windows = []
     raw_windows = data.get("windows") or []
     if not isinstance(raw_windows, list):
-        errors.append("windows: deve essere una lista")
+        errors.append(_("{where}: must be a list").format(where="windows"))
         raw_windows = []
     for i, w in enumerate(raw_windows):
         if isinstance(w, str) and w:
@@ -209,13 +226,14 @@ def parse(data, path: Path | None = None) -> Project:
         elif isinstance(w, dict) and w.get("match"):
             windows.append(Window(match=str(w["match"]), name=str(w.get("name", w["match"]))))
         else:
-            errors.append(f"windows[{i}]: serve una stringa o una mappa con 'match'")
+            errors.append(_("{where}: must be a string or a mapping with '{key}'").format(where=f"windows[{i}]", key="match"))
     if not windows and camera is None:
-        errors.append("niente da registrare: configura 'camera' e/o almeno una voce in 'windows'")
+        errors.append(_("nothing to record: configure 'camera' and/or at least one entry in 'windows'"))
 
     audio = _audio(_mapping(data.get("audio"), "audio", errors), errors)
     output = _output(_mapping(data.get("output"), "output", errors), errors)
     launch = _launch(data.get("launch") or [], base, errors)
+    rules = _privacy(_mapping(data.get("privacy"), "privacy", errors), errors)
 
     if errors:
         raise ProjectError(errors)
@@ -223,7 +241,7 @@ def parse(data, path: Path | None = None) -> Project:
     return Project(
         name=name, path=path, width=width, height=height, fps=fps, background=background,
         camera=camera, screen=screen, windows=windows, audio=audio, output=output,
-        transition=transition, launch=launch,
+        transition=transition, launch=launch, privacy=rules,
     )
 
 
@@ -233,7 +251,7 @@ def _camera(raw, canvas, errors) -> Camera | None:
     if isinstance(raw, str):
         raw = {"device": raw}
     if not isinstance(raw, dict):
-        errors.append("camera: deve essere una mappa, una stringa (device) o false")
+        errors.append(_("camera: must be a mapping, a device name or false"))
         return None
     cam = Camera(device=str(raw.get("device", "default")))
     if "capture" in raw:
@@ -241,14 +259,14 @@ def _camera(raw, canvas, errors) -> Camera | None:
     closeup = raw.get("closeup", "fullscreen")
     cam.closeup = _placement(closeup, canvas, "camera.closeup", errors) if closeup else None
     if cam.closeup is None:
-        errors.append("camera.closeup: la scena camera richiede una posizione")
+        errors.append(_("camera.closeup: the close-up scene needs a placement"))
     overlay = raw.get("overlay", {"position": "bottom-right", "width": 240})
     if isinstance(overlay, str) and overlay != "fullscreen":
         overlay = {"position": overlay}
     if overlay:
         shape = overlay.get("shape", "circle") if isinstance(overlay, dict) else "rect"
         if shape not in ("circle", "rect"):
-            errors.append("camera.overlay.shape: deve essere 'circle' o 'rect'")
+            errors.append(_("{where}: must be one of {values}").format(where="camera.overlay.shape", values="circle, rect"))
         if shape == "circle" and isinstance(overlay, dict) and "height" not in overlay:
             overlay = {**overlay, "height": overlay.get("width", 240)}
         cam.overlay = _placement(overlay, canvas, "camera.overlay", errors)
@@ -264,9 +282,9 @@ def _camera(raw, canvas, errors) -> Camera | None:
             margin=_int(bubble.get("margin", 40), "camera.bubble.margin", errors, minimum=0),
         )
         if cam.bubble.position not in POSITIONS:
-            errors.append(f"camera.bubble.position: deve essere uno tra {', '.join(POSITIONS)}")
+            errors.append(_("{where}: must be one of {values}").format(where="camera.bubble.position", values=", ".join(POSITIONS)))
     elif bubble is not False:
-        errors.append("camera.bubble: deve essere una mappa o false")
+        errors.append(_("camera.bubble: must be a mapping or false"))
     return cam
 
 
@@ -277,16 +295,16 @@ def _placement(spec, canvas, where: str, errors: list[str]) -> Placement | None:
     elif isinstance(spec, str):
         spec = {"position": spec}
     if not isinstance(spec, dict):
-        errors.append(f"{where}: deve essere 'fullscreen', una posizione o una mappa")
+        errors.append(_("{where}: must be 'fullscreen', a position or a mapping").format(where=where))
         return None
 
     fit = spec.get("fit", "cover")
     if fit not in FITS:
-        errors.append(f"{where}.fit: deve essere uno tra {', '.join(FITS)}")
+        errors.append(_("{where}: must be one of {values}").format(where=f"{where}.fit", values=", ".join(FITS)))
         fit = "cover"
     alpha = _float(spec.get("alpha", 1.0), f"{where}.alpha", errors)
     if not 0 <= alpha <= 1:
-        errors.append(f"{where}.alpha: deve essere tra 0 e 1")
+        errors.append(_("{where}: must be between 0 and 1").format(where=f"{where}.alpha"))
     if spec.get("fullscreen"):
         return Placement(Rect(0, 0, cw, ch), fit, alpha)
 
@@ -306,7 +324,7 @@ def _placement(spec, canvas, where: str, errors: list[str]) -> Placement | None:
     else:
         pos = spec.get("position", "center")
         if pos not in POSITIONS:
-            errors.append(f"{where}.position: deve essere uno tra {', '.join(POSITIONS)}")
+            errors.append(_("{where}: must be one of {values}").format(where=f"{where}.position", values=", ".join(POSITIONS)))
             pos = "center"
         x = margin if "left" in pos else cw - w - margin if "right" in pos else (cw - w) // 2
         y = margin if pos.startswith("top") else ch - h - margin if pos.startswith("bottom") else (ch - h) // 2
@@ -333,19 +351,20 @@ def _output(raw: dict, errors: list[str]) -> Output:
     out.filename = str(raw.get("filename", out.filename))
     out.format = str(raw.get("format", out.format))
     if out.format not in FORMATS:
-        errors.append(f"output.format: deve essere uno tra {', '.join(FORMATS)}")
+        errors.append(_("{where}: must be one of {values}").format(where="output.format", values=", ".join(FORMATS)))
     out.video_bitrate = _int(raw.get("video_bitrate", out.video_bitrate), "output.video_bitrate", errors, minimum=100)
     out.audio_bitrate = _int(raw.get("audio_bitrate", out.audio_bitrate), "output.audio_bitrate", errors, minimum=32)
     try:
         out.filename.format(project="", timestamp="", date="", format="")
     except (KeyError, IndexError, ValueError) as e:
-        errors.append(f"output.filename: segnaposto non valido ({e}); usa {{project}}, {{timestamp}}, {{date}}, {{format}}")
+        errors.append(_("output.filename: invalid placeholder ({error}); use {placeholders}").format(
+            error=e, placeholders="{project}, {timestamp}, {date}, {format}"))
     return out
 
 
 def _launch(raw, base: Path, errors: list[str]) -> list[Launch]:
     if not isinstance(raw, list):
-        errors.append("launch: deve essere una lista")
+        errors.append(_("{where}: must be a list").format(where="launch"))
         return []
     out = []
     for i, item in enumerate(raw):
@@ -359,15 +378,39 @@ def _launch(raw, base: Path, errors: list[str]) -> list[Launch]:
                 delay=_float(item.get("delay", 0), f"launch[{i}].delay", errors),
             ))
         else:
-            errors.append(f"launch[{i}]: serve una stringa o una mappa con 'command'")
+            errors.append(_("{where}: must be a string or a mapping with '{key}'").format(where=f"launch[{i}]", key="command"))
     return out
+
+
+def _privacy(raw: dict, errors: list[str]) -> tuple[privacy.Rule, ...]:
+    allow = raw.get("allow") or []
+    if not isinstance(allow, list) or not all(isinstance(a, str) for a in allow):
+        errors.append(_("{where}: must be a list of domains").format(where="privacy.allow"))
+        allow = []
+    block = []
+    raw_block = raw.get("block") or []
+    if not isinstance(raw_block, list):
+        errors.append(_("{where}: must be a list").format(where="privacy.block"))
+        raw_block = []
+    for i, item in enumerate(raw_block):
+        if isinstance(item, str) and item:
+            block.append(privacy.Rule(item))
+        elif isinstance(item, dict) and item.get("domain"):
+            titles = item.get("titles") or []
+            if isinstance(titles, str):
+                titles = [titles]
+            block.append(privacy.Rule(str(item["domain"]), tuple(str(t) for t in titles)))
+        else:
+            errors.append(_("{where}: must be a string or a mapping with '{key}'").format(
+                where=f"privacy.block[{i}]", key="domain"))
+    return privacy.build(allow, block)
 
 
 def _mapping(value, where: str, errors: list[str]) -> dict:
     if value is None:
         return {}
     if not isinstance(value, dict):
-        errors.append(f"{where}: deve essere una mappa")
+        errors.append(_("{where}: must be a mapping").format(where=where))
         return {}
     return value
 
@@ -378,7 +421,7 @@ def _resolution(value, where: str, errors: list[str]) -> tuple[int, int]:
         return RESOLUTION_PRESETS[s]
     m = re.fullmatch(r"\s*(\d+)\s*x\s*(\d+)\s*", s)
     if not m or int(m[1]) < 16 or int(m[2]) < 16:
-        errors.append(f"{where}: risoluzione non valida '{value}' (es. 1920x1080 o 1080p)")
+        errors.append(_("{where}: invalid resolution '{value}' (e.g. 1920x1080 or 1080p)").format(where=where, value=value))
         return 1920, 1080
     # Encoders want even dimensions.
     return int(m[1]) // 2 * 2, int(m[2]) // 2 * 2
@@ -394,22 +437,22 @@ def _dimension(value, total: int, where: str, errors: list[str]) -> int | None:
             pass
     elif isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return value
-    errors.append(f"{where}: deve essere un intero positivo o una percentuale (es. 25%)")
+    errors.append(_("{where}: must be a positive integer or a percentage (e.g. 25%)").format(where=where))
     return None
 
 
 def _int(value, where: str, errors: list[str], minimum=None, maximum=None) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        errors.append(f"{where}: deve essere un intero")
+        errors.append(_("{where}: must be an integer").format(where=where))
         return minimum or 0
     if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
-        errors.append(f"{where}: fuori intervallo ({value})")
+        errors.append(_("{where}: out of range ({value})").format(where=where, value=value))
     return value
 
 
 def _float(value, where: str, errors: list[str]) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        errors.append(f"{where}: deve essere un numero")
+        errors.append(_("{where}: must be a number").format(where=where))
         return 0.0
     return float(value)
 
@@ -428,54 +471,68 @@ def _resolve(value: str, base: Path) -> Path:
     return p if p.is_absolute() else base / p
 
 
-TEMPLATE = """\
+def template(name: str) -> str:
+    """A commented starter project."""
+    return _(TEMPLATE).format(name=name)
+
+
+# Translators: this is a YAML file; translate only the comments after '#'.
+TEMPLATE = N_("""\
 project: {name}
 
 video:
   resolution: 1920x1080
   fps: 30
-  transition: 0.3            # secondi di transizione tra le scene
+  transition: 0.3            # seconds of transition between scenes
 
-# Il desktop virtuale su cui viene composto il video: un colore (#RRGGBB) o il
-# percorso di un'immagine. Se omesso si usa l'immagine predefinita di rec0.
+# The virtual desktop the video is composed on: a color (#RRGGBB) or the path
+# of an image. When omitted, rec0's default background is used.
 # background: "#1e2030"
 
-# Scena "camera": primo piano, attiva quando rec0 (o una finestra non elencata
-# sotto) ha il focus.
+# Close-up scene: active while rec0, or any window not listed below, has focus.
 camera:
-  device: default            # default, /dev/videoN o parte del nome
-  closeup: fullscreen        # oppure {{position: center, width: 70%}}
-  overlay:                   # webcam piccola durante la condivisione (false per nasconderla)
+  device: default            # default, /dev/videoN or part of the device name
+  closeup: fullscreen        # or {{position: center, width: 70%}}
+  overlay:                   # small webcam during the share scene (false to hide it)
     position: bottom-right
     width: 240
-    shape: circle            # circle o rect
-  bubble:                    # bolla con la webcam sullo schermo durante la registrazione
-    size: 200                # (false per disattivarla); nel video l'overlay la segue
+    shape: circle            # circle or rect
+  bubble:                    # round webcam window on screen while recording
+    size: 200                # (false to disable it); in the video the overlay follows it
     position: bottom-right
 
-# Scena "condivisione": quando una di queste finestre ha il focus viene mostrata
-# sul desktop virtuale nella stessa posizione che ha sullo schermo reale.
-# Il match è sul titolo o sulla classe: per una tab del browser usa il suo titolo.
+# Share scene: when one of these windows has focus it is shown on the virtual
+# desktop at the same position it has on the real screen. Matching is on the
+# window title or class: for a browser tab, use its title.
 screen:
   monitor: primary
-  margin: 40                 # bordo di desktop virtuale attorno allo schermo reale
+  margin: 40                 # virtual desktop border around the real screen
 
 windows:
   - match: Firefox
   - match: Terminal
 
 audio:
-  microphone: default        # default, false, "test" o parte del nome del dispositivo
-  desktop: false             # audio di sistema
+  microphone: default        # default, false, "test" or part of the device name
+  desktop: false             # system sound
 
-# Applicazioni da avviare prima di registrare (opzionale)
+# Pages that are never recorded: when one has focus the share scene does not
+# start (or freezes on the last safe frame). rec0 has a built-in list of mail,
+# chat, password and banking sites (gmail.com, web.whatsapp.com, paypal.com…).
+# privacy:
+#   allow: [app.slack.com]           # lift built-in entries
+#   block:                           # add your own
+#     - mybank.example
+#     - {{domain: intranet.example, titles: ["Intranet"]}}
+
+# Applications to start before recording (optional)
 # launch:
 #   - command: firefox https://docs.python.org
 #   - command: gnome-terminal
-#     cwd: ~/Develop/progetto
+#     cwd: ~/Develop/project
 
 output:
-  directory: ~/Videos/{name}
+  # directory: ~/Videos/{name}   # default: the Videos folder, rec0 subfolder
   filename: "{{project}}-{{timestamp}}.mp4"
-  format: mp4                # mp4 oppure mkv (più robusto se il programma si interrompe)
-"""
+  format: mp4                # mp4 or mkv (more robust if the program is interrupted)
+""")

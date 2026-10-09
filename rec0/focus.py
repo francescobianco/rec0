@@ -16,7 +16,7 @@ class FocusTracker:
     """Polls the active window in a thread; calls `callback(FocusedWindow|None)` on the
     main loop whenever focus, title (e.g. browser tab) or geometry changes."""
 
-    def __init__(self, callback: Callable[[FocusedWindow | None], None], interval: float = 0.2):
+    def __init__(self, callback: Callable[[FocusedWindow | None], None], interval: float = 0.1):
         self.callback = callback
         self.interval = interval
         self._stop = threading.Event()

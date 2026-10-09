@@ -15,6 +15,8 @@ DEFAULTS = {
     "reopen-last-project": True,
     "show-bubble": True,
     "countdown": 3,
+    "camera-device": "",
+    "microphone-device": "",
 }
 
 
@@ -50,12 +52,12 @@ def get():
 
 def _load():
     source = Gio.SettingsSchemaSource.get_default()
-    schema = source.lookup(config.APP_ID, True) if source else None
+    schema = source.lookup(config.SCHEMA_ID, True) if source else None
     if schema is None:
         build = SOURCE_ROOT / "_build" / "schemas"
         if (build / "gschemas.compiled").exists():
             local = Gio.SettingsSchemaSource.new_from_directory(str(build), source, False)
-            schema = local.lookup(config.APP_ID, False)
+            schema = local.lookup(config.SCHEMA_ID, False)
     if schema is None:
         return _Memory()
     return Gio.Settings.new_full(schema, None, None)

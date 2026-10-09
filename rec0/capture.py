@@ -26,6 +26,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst  # noqa: E402
 
 from . import x11  # noqa: E402
+from .i18n import _  # noqa: E402
 from .project import Project, Rect, _color  # noqa: E402
 from .x11 import X11Window  # noqa: E402,F401  (re-exported)
 
@@ -108,15 +109,16 @@ def find_camera(spec: str) -> Device:
                 return c
         if os.path.exists(spec):
             return Device(spec, spec)
-        raise CaptureError(f"webcam non trovata: {spec}")
+        raise CaptureError(_("webcam not found: {device}").format(device=spec))
     if not cams:
-        raise CaptureError("nessuna webcam trovata")
+        raise CaptureError(_("no webcam found"))
     if spec == "default":
         return cams[0]
     for c in cams:
         if spec.casefold() in c.name.casefold():
             return c
-    raise CaptureError(f"nessuna webcam corrisponde a '{spec}' (disponibili: {', '.join(c.name for c in cams)})")
+    raise CaptureError(_("no webcam matches '{spec}' (available: {devices})").format(
+        spec=spec, devices=", ".join(c.name for c in cams)))
 
 
 def find_microphone(spec: str) -> str | None:
@@ -130,7 +132,8 @@ def find_microphone(spec: str) -> str | None:
     for m in mics:
         if spec.casefold() in m.name.casefold() or spec.casefold() in m.id.casefold():
             return m.id
-    raise CaptureError(f"nessun microfono corrisponde a '{spec}' (disponibili: {', '.join(m.name for m in mics)})")
+    raise CaptureError(_("no microphone matches '{spec}' (available: {devices})").format(
+        spec=spec, devices=", ".join(m.name for m in mics)))
 
 
 def pick_camera_caps(caps: str, fps: int, want: tuple[int, int]) -> str | None:
@@ -292,18 +295,18 @@ class PortalSession:
                 GLib.Variant(signature, (*args[:-1], options)), None, Gio.DBusCallFlags.NONE, -1, None)
             loop.run()
         except GLib.Error as e:
-            raise CaptureError(f"portale ScreenCast ({method}): {e.message}") from e
+            raise CaptureError(_("ScreenCast portal ({method}): {error}").format(method=method, error=e.message)) from e
         finally:
             self.bus.signal_unsubscribe(sub)
         if result.get("code") == 1:
-            raise CaptureError("condivisione schermo annullata dall'utente")
+            raise CaptureError(_("screen sharing was cancelled"))
         if result.get("code") != 0:
-            raise CaptureError(f"portale ScreenCast ({method}) ha risposto con errore {result.get('code')}")
+            raise CaptureError(_("ScreenCast portal ({method}) failed with code {code}").format(method=method, code=result.get("code")))
         return result["results"]
 
     def open(self):
         if self._property("version") is None:
-            raise CaptureError("portale ScreenCast non disponibile (serve xdg-desktop-portal-gnome)")
+            raise CaptureError(_("the ScreenCast portal is not available (xdg-desktop-portal-gnome is required)"))
         res = self._request("CreateSession", "(a{sv})", ({
             "session_handle_token": GLib.Variant("s", self._token()),
         },))
@@ -325,7 +328,7 @@ class PortalSession:
         res = self._request("Start", "(osa{sv})", (self.session_handle, "", {}))
         streams = res.get("streams") or []
         if not streams:
-            raise CaptureError("il portale non ha restituito alcuno stream")
+            raise CaptureError(_("the portal returned no stream"))
         self.node_id, self.stream = streams[0]
         _save_token(self.token_key, res.get("restore_token"))
 
@@ -376,12 +379,12 @@ class Captures:
 
     def launch_apps(self):
         for item in self.project.launch:
-            self.log(f"avvio: {item.command}")
+            self.log(_("starting: {command}").format(command=item.command))
             try:
                 subprocess.Popen(shlex.split(os.path.expanduser(item.command)), cwd=item.cwd,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             except OSError as e:
-                raise CaptureError(f"impossibile avviare '{item.command}': {e.strerror}") from e
+                raise CaptureError(_("cannot start '{command}': {error}").format(command=item.command, error=e.strerror)) from e
             if item.delay:
                 time.sleep(item.delay)
 
@@ -402,22 +405,23 @@ class Captures:
         if self.backend == "x11":
             mons = x11_monitors()
             if not mons:
-                raise CaptureError("impossibile determinare la geometria dei monitor")
+                raise CaptureError(_("cannot determine the monitor geometry"))
             if spec == "primary":
                 m = next((m for m in mons if m["primary"]), mons[0])
             else:
                 m = next((m for m in mons if spec in (str(m["index"]), m["name"])), None)
                 if m is None:
-                    raise CaptureError(f"monitor '{spec}' non trovato (disponibili: {', '.join(m['name'] for m in mons)})")
+                    raise CaptureError(_("monitor '{spec}' not found (available: {monitors})").format(
+                        spec=spec, monitors=", ".join(m["name"] for m in mons)))
             return Rect(m["x"], m["y"], m["width"], m["height"])
         if self.backend == "wayland":
-            self.log("seleziona lo schermo da condividere nella finestra di dialogo del sistema (solo la prima volta)")
+            self.log(_("choose the screen to share in the system dialog (only the first time)"))
             self.portal = PortalSession(TYPE_MONITOR, self.project.screen.cursor, f"{self.project.name}:screen")
             self.portal.open()
             w, h = self.portal.stream.get("size", (1920, 1080))
             x, y = self.portal.stream.get("position", (0, 0))
             return Rect(x, y, w, h)
-        raise CaptureError("nessuna sessione grafica rilevata per catturare lo schermo")
+        raise CaptureError(_("no graphical session found to capture the screen"))
 
     def camera_source(self, want: tuple[int, int]) -> str | None:
         cam = self.project.camera
@@ -482,7 +486,7 @@ def prepared_background(path: str, width: int, height: int) -> str:
     try:
         src = GdkPixbuf.Pixbuf.new_from_file(path).apply_embedded_orientation()
     except GLib.Error as e:
-        raise CaptureError(f"impossibile leggere lo sfondo {path}: {e.message}") from e
+        raise CaptureError(_("cannot read the background {path}: {error}").format(path=path, error=e.message)) from e
     k = max(width / src.get_width(), height / src.get_height())
     scaled = src.scale_simple(max(width, round(src.get_width() * k)), max(height, round(src.get_height() * k)),
                               GdkPixbuf.InterpType.HYPER)

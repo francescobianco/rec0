@@ -37,5 +37,15 @@
       <summary>Seconds of countdown before recording starts</summary>
       <description>The number of seconds to count down before recording starts. Set to 0 to start recording immediately.</description>
     </key>
+    <key name="camera-device" type="s">
+      <default>""</default>
+      <summary>Webcam</summary>
+      <description>Device path of the webcam to use (for example /dev/video0). Empty to use the one set in the project.</description>
+    </key>
+    <key name="microphone-device" type="s">
+      <default>""</default>
+      <summary>Microphone</summary>
+      <description>Audio input to use: a PulseAudio/PipeWire source name, "default", or "none". Empty to use the one set in the project.</description>
+    </key>
   </schema>
 </schemalist>

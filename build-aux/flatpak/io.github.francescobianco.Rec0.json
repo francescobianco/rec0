@@ -1,0 +1,55 @@
+{
+  "id": "io.github.francescobianco.Rec0",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "47",
+  "sdk": "org.gnome.Sdk",
+  "command": "rec0",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--socket=pulseaudio",
+    "--device=all",
+    "--filesystem=home",
+    "--filesystem=xdg-videos:create",
+    "--filesystem=xdg-run/pipewire-0:ro"
+  ],
+  "add-extensions": {
+    "org.freedesktop.Platform.ffmpeg-full": {
+      "directory": "lib/ffmpeg",
+      "version": "24.08",
+      "add-ld-path": ".",
+      "autodownload": true,
+      "autodelete": false
+    }
+  },
+  "cleanup-commands": [
+    "mkdir -p /app/lib/ffmpeg"
+  ],
+  "modules": [
+    {
+      "name": "python3-pyyaml",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=file://${PWD} --prefix=${FLATPAK_DEST} pyyaml --no-build-isolation"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz",
+          "sha256": "d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e"
+        }
+      ]
+    },
+    {
+      "name": "rec0",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../.."
+        }
+      ]
+    }
+  ]
+}

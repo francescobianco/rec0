@@ -138,7 +138,7 @@ def main(argv: list[str]) -> int:
     GLib.set_prgname("rec0-bubble")
     state = {"surface": None}
 
-    win = Gtk.Window(title="rec0 webcam")
+    win = Gtk.Window(title="rec0")
     win.set_decorated(False)
     win.set_keep_above(True)
     win.stick()

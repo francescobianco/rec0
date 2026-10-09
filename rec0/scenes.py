@@ -7,9 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from .i18n import _
 from .project import Bubble, Project, Rect
 
-SCENE_LABELS = {"camera": "Primo piano", "share": "Condivisione"}
+
+def scene_label(scene: str) -> str:
+    return {"camera": _("Close-up"), "share": _("Share")}[scene]
 
 
 @dataclass(frozen=True)

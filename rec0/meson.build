@@ -1,0 +1,31 @@
+sources = files(
+  '__init__.py',
+  '__main__.py',
+  'app.py',
+  'bubble.py',
+  'capture.py',
+  'cli.py',
+  'devapi.py',
+  'focus.py',
+  'i18n.py',
+  'privacy.py',
+  'project.py',
+  'recorder.py',
+  'scenes.py',
+  'settings.py',
+  'x11.py',
+)
+install_data(sources, install_dir: pkgdatadir / 'rec0')
+
+# config.py with the installation paths filled in.
+custom_target('config.py',
+  input: 'config.py',
+  output: 'config.py',
+  command: [find_program('sed'),
+    '-e', 's|^LOCALEDIR = None|LOCALEDIR = "@0@"|'.format(localedir),
+    '-e', 's|^PKGDATADIR = None|PKGDATADIR = "@0@"|'.format(pkgdatadir),
+    '@INPUT@'],
+  capture: true,
+  install: true,
+  install_dir: pkgdatadir / 'rec0',
+)

@@ -1,0 +1,7 @@
+#!@PYTHON@
+import sys
+
+sys.path.insert(0, "@pkgdatadir@")
+from rec0.cli import main  # noqa: E402
+
+sys.exit(main())

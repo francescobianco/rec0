@@ -55,3 +55,54 @@ def test_record_with_scene_switch(tmp_path, fmt):
     assert scenes == ["share", "camera"]
     probe = subprocess.run(["gst-discoverer-1.0", str(out)], capture_output=True, text=True).stdout
     assert "H.264" in probe and "AAC" in probe
+
+
+def test_privacy_holds_scene_and_delays_reveal(tmp_path):
+    from rec0.recorder import SCREEN_DELAY
+
+    p = parse({
+        "video": {"resolution": "640x360", "fps": 25, "transition": 0},
+        "camera": {"device": "test"},
+        "screen": {"monitor": "test"},
+        "windows": ["chrome"],
+        "audio": {"microphone": False},
+        "privacy": {"block": ["mybank.example"]},
+        "output": {"directory": str(tmp_path)},
+    })
+    caps = Captures(p, log=lambda m: None)
+    rec = Recorder(p, caps)
+    caps.prepare()
+    d = Director(rec)
+    loop = GLib.MainLoop()
+    log, errors = [], []
+    rec.on_error = errors.append
+    rec.on_finished = lambda path: loop.quit()
+    rec.start(d.frame, p.output_path())
+
+    def win(title):
+        return FocusedWindow(1, title + " - Google Chrome", "google-chrome", Rect(0, 0, 800, 600))
+
+    def step(ms, fn):
+        GLib.timeout_add(ms, lambda: fn() and False)
+
+    # From close-up, a private tab never starts sharing.
+    step(300, lambda: d.focus_changed(win("Inbox - Gmail")))
+    step(400, lambda: log.append(("gmail", d.scene, rec.frozen, d.private.domain)))
+    # A shareable tab: sharing starts only after the delay.
+    step(500, lambda: d.focus_changed(win("Python docs")))
+    step(600, lambda: log.append(("docs-early", d.scene, rec.frozen)))
+    step(500 + int(SCREEN_DELAY * 1000) + 200, lambda: log.append(("docs", d.scene, rec.frozen)))
+    # Switching to a private tab while sharing freezes immediately, scene stays.
+    step(1400, lambda: d.focus_changed(win("Home - mybank.example")))
+    step(1450, lambda: log.append(("bank", d.scene, rec.frozen)))
+    step(1800, lambda: rec.stop() and False)
+    GLib.timeout_add(15000, loop.quit)
+    loop.run()
+
+    assert not errors
+    assert log == [
+        ("gmail", "camera", True, "gmail.com"),
+        ("docs-early", "camera", True),
+        ("docs", "share", False),
+        ("bank", "share", True),
+    ]

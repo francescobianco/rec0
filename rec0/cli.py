@@ -1,4 +1,8 @@
-"""Command line interface: rec0 init|check|record|devices|pipeline|forget|gui."""
+"""Command line interface.
+
+`rec0 [FILE…]` opens the GUI (GApplication options such as --gapplication-service
+are passed through); `rec0 init|check|record|devices|pipeline|forget` run headless.
+"""
 
 from __future__ import annotations
 
@@ -8,51 +12,50 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .project import TEMPLATE, ProjectError, load
+from .i18n import _
+from .project import ProjectError, load, template
+
+COMMANDS = {"init", "check", "record", "devices", "pipeline", "forget", "-h", "--help", "--version"}
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    # `rec0` and `rec0 progetto.yaml` open the GUI.
-    commands = {"init", "check", "record", "devices", "pipeline", "forget", "gui", "-h", "--help", "--version"}
-    if not argv or argv[0] not in commands:
-        argv = ["gui", *argv]
+    if not argv or argv[0] not in COMMANDS:
+        return gui(argv)
 
-    parser = argparse.ArgumentParser(prog="rec0", description="Registratore video dichiarativo basato su progetti YAML.")
+    parser = argparse.ArgumentParser(prog="rec0", description=_("Declarative video recorder driven by YAML projects."),
+                                     epilog=_("Without a command, rec0 opens the graphical interface."))
     parser.add_argument("--version", action="version", version=f"rec0 {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("init", help="crea un nuovo file di progetto")
-    p.add_argument("name", help="nome del progetto (crea NAME.yaml)")
+    p = sub.add_parser("init", help=_("create a new project file"))
+    p.add_argument("name", help=_("project name (creates NAME.yaml)"))
 
-    p = sub.add_parser("check", help="valida il progetto e verifica i dispositivi")
+    p = sub.add_parser("check", help=_("validate the project and check the devices"))
     p.add_argument("project")
 
-    p = sub.add_parser("record", help="registra senza interfaccia grafica (Ctrl+C per fermare)")
+    p = sub.add_parser("record", help=_("record without the graphical interface (Ctrl+C to stop)"))
     p.add_argument("project")
-    p.add_argument("-d", "--duration", type=float, help="ferma dopo N secondi")
-    p.add_argument("-o", "--output", help="file di output (sovrascrive output.directory/filename)")
+    p.add_argument("-d", "--duration", type=float, help=_("stop after N seconds"))
+    p.add_argument("-o", "--output", help=_("output file (overrides output.directory/filename)"))
     p.add_argument("-s", "--scene", choices=("auto", "camera", "share"), default="auto",
-                   help="auto segue il focus delle finestre (default)")
-    p.add_argument("--no-launch", action="store_true", help="non avviare le applicazioni in 'launch'")
-    p.add_argument("--no-bubble", action="store_true", help="non mostrare la bolla con la webcam sullo schermo")
+                   help=_("auto follows window focus (default)"))
+    p.add_argument("--no-launch", action="store_true", help=_("do not start the applications in 'launch'"))
+    p.add_argument("--no-bubble", action="store_true", help=_("do not show the webcam bubble on screen"))
 
-    sub.add_parser("devices", help="elenca webcam, microfoni, monitor e finestre")
+    sub.add_parser("devices", help=_("list webcams, microphones, monitors and windows"))
 
-    p = sub.add_parser("pipeline", help="stampa la pipeline GStreamer (debug)")
+    p = sub.add_parser("pipeline", help=_("print the GStreamer pipeline (debugging)"))
     p.add_argument("project")
 
-    p = sub.add_parser("forget", help="dimentica le autorizzazioni di cattura salvate (Wayland)")
-    p.add_argument("project", nargs="?")
-
-    p = sub.add_parser("gui", help="apre l'interfaccia grafica (default)")
+    p = sub.add_parser("forget", help=_("forget saved screen capture permissions (Wayland)"))
     p.add_argument("project", nargs="?")
 
     args = parser.parse_args(argv)
     try:
         return globals()[f"cmd_{args.command}"](args)
     except ProjectError as e:
-        print("Errori nel progetto:", file=sys.stderr)
+        print(_("Errors in the project:"), file=sys.stderr)
         for err in e.errors:
             print(f"  - {err}", file=sys.stderr)
         return 2
@@ -60,13 +63,20 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
 
+def gui(argv: list[str]) -> int:
+    from .app import run
+
+    dev_api = "--dev-api" in argv
+    return run([a for a in argv if a != "--dev-api"], dev_api=dev_api)
+
+
 def cmd_init(args) -> int:
     path = Path(args.name if args.name.endswith((".yaml", ".yml")) else f"{args.name}.yaml")
     if path.exists():
-        print(f"{path} esiste già", file=sys.stderr)
+        print(_("{path} already exists").format(path=path), file=sys.stderr)
         return 1
-    path.write_text(TEMPLATE.format(name=path.stem))
-    print(f"creato {path}")
+    path.write_text(template(path.stem))
+    print(_("created {path}").format(path=path))
     return 0
 
 
@@ -85,38 +95,39 @@ def cmd_check(args) -> int:
             ok = False
             print(f"  ✗ {label}: {e}")
 
-    print(f"Progetto '{project.name}': {project.width}x{project.height} @ {project.fps} fps, "
-          f"sfondo {project.background}")
-    print(f"Sessione grafica: {session_type()}")
+    print(_("Project '{name}': {width}x{height} @ {fps} fps, background {background}").format(
+        name=project.name, width=project.width, height=project.height, fps=project.fps,
+        background=project.background))
+    print(_("Graphical session: {session}").format(session=session_type()))
     caps = Captures(project, log=lambda m: None)
     if project.camera:
         if project.camera.device == "test":
-            print("  ✓ camera: sorgente di test")
+            print("  ✓ " + _("camera: test source"))
         else:
-            report("camera", lambda: (caps.prepare(), f"{caps.camera.name} ({caps.camera.id})")[1])
+            report(_("camera"), lambda: (caps.prepare(), f"{caps.camera.name} ({caps.camera.id})")[1])
     if project.windows:
         if caps.backend == "wayland":
-            print("  ! Wayland: il focus delle finestre non è leggibile, le scene si cambiano a mano")
-            print("    (dalla GUI o con --scene); lo schermo viene autorizzato al primo avvio")
+            print("  ! " + _("Wayland: window focus cannot be read, scenes are switched by hand"))
+            print("    " + _("(from the GUI or with --scene); the screen is authorized on first use"))
         else:
-            report("schermo", lambda: (caps.prepare(), f"{caps.monitor.width}x{caps.monitor.height}"
-                                       f"+{caps.monitor.x}+{caps.monitor.y}")[1])
+            report(_("screen"), lambda: (caps.prepare(), f"{caps.monitor.width}x{caps.monitor.height}"
+                                         f"+{caps.monitor.x}+{caps.monitor.y}")[1])
             if caps.backend == "x11":
                 wins = x11_windows()
                 for w in project.windows:
                     found = [x for x in wins if project.match_window(x.title, x.wm_class) is w]
-                    state = f"aperta ({found[0].title})" if found else "non aperta ora"
-                    print(f"  · finestra '{w.match}': {state}")
+                    state = _("open ({title})").format(title=found[0].title) if found else _("not open now")
+                    print("  · " + _("window '{match}': {state}").format(match=w.match, state=state))
     a = project.audio
     if a.microphone and a.microphone != "test":
-        report("microfono", lambda: find_microphone(a.microphone) or "predefinito")
+        report(_("microphone"), lambda: find_microphone(a.microphone) or _("default"))
     if a.desktop:
-        print("  ✓ audio di sistema: monitor dell'uscita predefinita")
-    report("encoder video", lambda: video_encoder(project.output.video_bitrate, project.fps).split()[0])
-    report("encoder audio", lambda: audio_encoder(project.output.audio_bitrate).split()[0])
-    print(f"Output: {project.output_path()}")
+        print("  ✓ " + _("system sound: monitor of the default output"))
+    report(_("video encoder"), lambda: video_encoder(project.output.video_bitrate, project.fps).split()[0])
+    report(_("audio encoder"), lambda: audio_encoder(project.output.audio_bitrate).split()[0])
+    print(_("Output: {path}").format(path=project.output_path()))
     caps.close()
-    print("Tutto pronto." if ok else "Ci sono problemi da risolvere.")
+    print(_("All set.") if ok else _("There are problems to fix."))
     return 0 if ok else 1
 
 
@@ -125,8 +136,8 @@ def cmd_record(args) -> int:
 
     from .capture import CaptureError, Captures
     from .focus import FocusTracker
-    from .scenes import SCENE_LABELS
     from .recorder import Director, Recorder
+    from .scenes import scene_label
 
     project = load(args.project)
     output = Path(args.output).expanduser() if args.output else project.output_path()
@@ -136,22 +147,23 @@ def cmd_record(args) -> int:
             captures.launch_apps()
         captures.prepare()
     except CaptureError as e:
-        print(f"errore: {e}", file=sys.stderr)
+        print(_("error: {message}").format(message=e), file=sys.stderr)
         return 1
 
     loop = GLib.MainLoop()
     rec = Recorder(project, captures)
     director = Director(rec, on_scene=lambda scene, title: print(
-        f"\r\033[Kscena: {SCENE_LABELS[scene]}" + (f" — {title}" if title else "")))
+        "\r\033[K" + _("scene: {scene}").format(scene=scene_label(scene)) + (f" — {title}" if title else "")))
     result = {"code": 0}
+    bubble = None
     tracker = FocusTracker(director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
     if args.scene != "auto":
         director.set_mode(args.scene)
     elif not captures.follows_focus and project.windows:
-        print("nota: cambio scena automatico non disponibile in questa sessione (usa --scene)")
+        print(_("note: automatic scene switching is not available in this session (use --scene)"))
 
     def on_error(msg):
-        print(f"\nerrore: {msg}", file=sys.stderr)
+        print("\n" + _("error: {message}").format(message=msg), file=sys.stderr)
         result["code"] = 1
 
     def on_finished(path):
@@ -160,7 +172,7 @@ def cmd_record(args) -> int:
         if bubble:
             bubble.stop()
         if path:
-            print(f"\nsalvato: {path}")
+            print("\n" + _("saved: {path}").format(path=path))
         loop.quit()
 
     def tick():
@@ -169,8 +181,8 @@ def cmd_record(args) -> int:
             print(f"\r\033[K● REC {s // 3600:02d}:{s // 60 % 60:02d}:{s % 60:02d}", end="", flush=True)
         return True
 
-    def request_stop(*_):
-        print("\nfinalizzazione…")
+    def request_stop(*_args):
+        print("\n" + _("finishing…"))
         rec.stop()
         return True
 
@@ -179,12 +191,11 @@ def cmd_record(args) -> int:
     try:
         rec.start(director.frame, output)
     except RuntimeError as e:
-        print(f"errore: {e}", file=sys.stderr)
+        print(_("error: {message}").format(message=e), file=sys.stderr)
         captures.close()
         return 1
     if tracker:
         tracker.start()
-    bubble = None
     cam = project.camera
     if cam and cam.bubble and captures.monitor and not args.no_bubble:
         from .bubble import Bubble
@@ -198,7 +209,7 @@ def cmd_record(args) -> int:
         bubble.start()
         bubble.show()
         director.set_bubble(r)
-    print(f"registrazione in {output} — Ctrl+C per fermare")
+    print(_("recording to {path} — Ctrl+C to stop").format(path=output))
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, request_stop)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, request_stop)
     GLib.timeout_add(500, tick)
@@ -210,27 +221,24 @@ def cmd_record(args) -> int:
 
 
 def cmd_devices(args) -> int:
-    from .capture import CaptureError, cameras, microphones, session_type, x11_monitors, x11_windows
+    from .capture import cameras, microphones, session_type, x11_monitors, x11_windows
 
-    print("Webcam:")
+    print(_("Webcams:"))
     for c in cameras():
         print(f"  {c.id}  {c.name}")
-    print("Microfoni:")
+    print(_("Microphones:"))
     for m in microphones():
         print(f"  {m.name}  ({m.id})")
     if session_type() == "x11":
-        print("Monitor:")
+        print(_("Monitors:"))
         for m in x11_monitors():
             print(f"  {m['index']}: {m['name']} {m['width']}x{m['height']}+{m['x']}+{m['y']}"
-                  + (" (primario)" if m["primary"] else ""))
-        print("Finestre (per 'windows: - match: ...'):")
-        try:
-            for w in x11_windows():
-                print(f"  [{w.wm_class}]  {w.title}")
-        except CaptureError as e:
-            print(f"  {e}")
+                  + (" " + _("(primary)") if m["primary"] else ""))
+        print(_("Windows (for 'windows: - match: ...'):"))
+        for w in x11_windows():
+            print(f"  [{w.wm_class}]  {w.title}")
     else:
-        print("Monitor e finestre: su Wayland si scelgono tramite il portale di sistema.")
+        print(_("Monitors and windows: on Wayland they are chosen through the system portal."))
     return 0
 
 
@@ -251,14 +259,8 @@ def cmd_forget(args) -> int:
     from .capture import forget_tokens
 
     forget_tokens(load(args.project).name if args.project else None)
-    print("autorizzazioni dimenticate")
+    print(_("saved permissions forgotten"))
     return 0
-
-
-def cmd_gui(args) -> int:
-    from .app import run
-
-    return run(args.project)
 
 
 if __name__ == "__main__":

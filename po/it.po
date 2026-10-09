@@ -1,0 +1,591 @@
+# Italian translation for rec0.
+# Copyright (C) 2026 Francesco Bianco
+# This file is distributed under the same license as the rec0 package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: rec0 0.1.0\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Recording"
+msgstr "Registrazione"
+
+msgid "Start or Stop Recording"
+msgstr "Avvia o ferma la registrazione"
+
+msgid "Automatic Scene"
+msgstr "Scena automatica"
+
+msgid "Close-up Scene"
+msgstr "Scena primo piano"
+
+msgid "Share Scene"
+msgstr "Scena condivisione"
+
+msgid "Projects"
+msgstr "Progetti"
+
+msgid "New Project"
+msgstr "Nuovo progetto"
+
+msgid "Open Project"
+msgstr "Apri progetto"
+
+msgid "Edit Project File"
+msgstr "Modifica il file del progetto"
+
+msgid "General"
+msgstr "Generali"
+
+msgid "Preferences"
+msgstr "Preferenze"
+
+msgid "Keyboard Shortcuts"
+msgstr "Scorciatoie da tastiera"
+
+msgid "Close Window"
+msgstr "Chiudi la finestra"
+
+msgid "Quit"
+msgstr "Esci"
+
+msgid "rec0 Projects"
+msgstr "Progetti rec0"
+
+msgid "_Open"
+msgstr "_Apri"
+
+msgid "Open a Project"
+msgstr "Apri un progetto"
+
+msgid "Main Menu"
+msgstr "Menu principale"
+
+msgid "_New Project…"
+msgstr "_Nuovo progetto…"
+
+msgid "_Edit Project File"
+msgstr "_Modifica il file del progetto"
+
+msgid "Show _Recordings"
+msgstr "Mostra le _registrazioni"
+
+msgid "_Preferences"
+msgstr "_Preferenze"
+
+msgid "_Keyboard Shortcuts"
+msgstr "_Scorciatoie da tastiera"
+
+msgid "_About rec0"
+msgstr "_Informazioni su rec0"
+
+msgid "Record a Video"
+msgstr "Registra un video"
+
+msgid "A project file describes what to record: open one to start, or create a new one."
+msgstr "Un file di progetto descrive cosa registrare: aprine uno per iniziare, oppure creane uno nuovo."
+
+msgid "_Open Project…"
+msgstr "_Apri progetto…"
+
+msgid "Recent Projects"
+msgstr "Progetti recenti"
+
+msgid "Automatic"
+msgstr "Automatica"
+
+msgid "Close-up"
+msgstr "Primo piano"
+
+msgid "Share"
+msgstr "Condivisione"
+
+msgid "Ready"
+msgstr "Pronto"
+
+msgid "Microphone Level"
+msgstr "Livello del microfono"
+
+msgid "Start Recording"
+msgstr "Avvia la registrazione"
+
+msgid "Stop recording before changing project"
+msgstr "Ferma la registrazione prima di cambiare progetto"
+
+msgid "Invalid Project"
+msgstr "Progetto non valido"
+
+msgid "Recording Error"
+msgstr "Errore di registrazione"
+
+msgid "Sources Not Available"
+msgstr "Sorgenti non disponibili"
+
+msgid "Automatic scene switching is not available in this session"
+msgstr "Il cambio automatico di scena non è disponibile in questa sessione"
+
+msgid "Project reloaded"
+msgstr "Progetto ricaricato"
+
+msgid "Could Not Start the Preview"
+msgstr "Impossibile avviare l'anteprima"
+
+msgid "Cancel"
+msgstr "Annulla"
+
+msgid "Could Not Record"
+msgstr "Impossibile registrare"
+
+msgid "Recording a video"
+msgstr "Registrazione di un video in corso"
+
+msgid "Stop Recording"
+msgstr "Ferma la registrazione"
+
+msgid "Saving…"
+msgstr "Salvataggio…"
+
+msgid "Saved {name}"
+msgstr "Salvato {name}"
+
+msgid "_Play"
+msgstr "_Riproduci"
+
+msgid "Recording Saved"
+msgstr "Registrazione salvata"
+
+msgid "Show in Folder"
+msgstr "Mostra nella cartella"
+
+msgid "Scene: {scene}"
+msgstr "Scena: {scene}"
+
+msgid "tutorial"
+msgstr "tutorial"
+
+msgid "Only rec0 project files (.yaml) can be opened"
+msgstr "Si possono aprire solo file di progetto rec0 (.yaml)"
+
+msgid "_Close"
+msgstr "_Chiudi"
+
+msgid "Project-based video recorder: describe the session in a YAML file, press record."
+msgstr "Registratore video basato su progetti: descrivi la sessione in un file YAML e premi registra."
+
+msgid "translator-credits"
+msgstr "Francesco Bianco <info.francescobianco@gmail.com>"
+
+msgid "Countdown"
+msgstr "Conto alla rovescia"
+
+msgid "Seconds to wait before recording starts"
+msgstr "Secondi di attesa prima dell'inizio della registrazione"
+
+msgid "Webcam Bubble"
+msgstr "Bolla della webcam"
+
+msgid "Show your webcam on screen while recording, when rec0 is not focused"
+msgstr "Mostra la webcam sullo schermo durante la registrazione, quando rec0 non è in primo piano"
+
+msgid "Open the last used project at startup"
+msgstr "Apre all'avvio l'ultimo progetto usato"
+
+msgid "Reopen Last Project"
+msgstr "Riapri l'ultimo progetto"
+
+msgid "webcam not found: {device}"
+msgstr "webcam non trovata: {device}"
+
+msgid "no webcam found"
+msgstr "nessuna webcam trovata"
+
+msgid "no webcam matches '{spec}' (available: {devices})"
+msgstr "nessuna webcam corrisponde a '{spec}' (disponibili: {devices})"
+
+msgid "no microphone matches '{spec}' (available: {devices})"
+msgstr "nessun microfono corrisponde a '{spec}' (disponibili: {devices})"
+
+msgid "ScreenCast portal ({method}): {error}"
+msgstr "portale ScreenCast ({method}): {error}"
+
+msgid "screen sharing was cancelled"
+msgstr "la condivisione dello schermo è stata annullata"
+
+msgid "ScreenCast portal ({method}) failed with code {code}"
+msgstr "il portale ScreenCast ({method}) ha risposto con errore {code}"
+
+msgid "the ScreenCast portal is not available (xdg-desktop-portal-gnome is required)"
+msgstr "il portale ScreenCast non è disponibile (serve xdg-desktop-portal-gnome)"
+
+msgid "the portal returned no stream"
+msgstr "il portale non ha restituito alcuno stream"
+
+msgid "starting: {command}"
+msgstr "avvio: {command}"
+
+msgid "cannot start '{command}': {error}"
+msgstr "impossibile avviare '{command}': {error}"
+
+msgid "cannot determine the monitor geometry"
+msgstr "impossibile determinare la geometria dei monitor"
+
+msgid "monitor '{spec}' not found (available: {monitors})"
+msgstr "monitor '{spec}' non trovato (disponibili: {monitors})"
+
+msgid "choose the screen to share in the system dialog (only the first time)"
+msgstr "scegli lo schermo da condividere nella finestra di sistema (solo la prima volta)"
+
+msgid "no graphical session found to capture the screen"
+msgstr "nessuna sessione grafica trovata per catturare lo schermo"
+
+msgid "cannot read the background {path}: {error}"
+msgstr "impossibile leggere lo sfondo {path}: {error}"
+
+msgid "Declarative video recorder driven by YAML projects."
+msgstr "Registratore video dichiarativo basato su progetti YAML."
+
+msgid "Without a command, rec0 opens the graphical interface."
+msgstr "Senza un comando, rec0 apre l'interfaccia grafica."
+
+msgid "create a new project file"
+msgstr "crea un nuovo file di progetto"
+
+msgid "project name (creates NAME.yaml)"
+msgstr "nome del progetto (crea NOME.yaml)"
+
+msgid "validate the project and check the devices"
+msgstr "valida il progetto e verifica i dispositivi"
+
+msgid "record without the graphical interface (Ctrl+C to stop)"
+msgstr "registra senza interfaccia grafica (Ctrl+C per fermare)"
+
+msgid "stop after N seconds"
+msgstr "ferma dopo N secondi"
+
+msgid "output file (overrides output.directory/filename)"
+msgstr "file di output (sostituisce output.directory/filename)"
+
+msgid "auto follows window focus (default)"
+msgstr "auto segue il focus delle finestre (predefinito)"
+
+msgid "do not start the applications in 'launch'"
+msgstr "non avviare le applicazioni in 'launch'"
+
+msgid "do not show the webcam bubble on screen"
+msgstr "non mostrare la bolla della webcam sullo schermo"
+
+msgid "list webcams, microphones, monitors and windows"
+msgstr "elenca webcam, microfoni, monitor e finestre"
+
+msgid "print the GStreamer pipeline (debugging)"
+msgstr "stampa la pipeline GStreamer (debug)"
+
+msgid "forget saved screen capture permissions (Wayland)"
+msgstr "dimentica le autorizzazioni di cattura salvate (Wayland)"
+
+msgid "Errors in the project:"
+msgstr "Errori nel progetto:"
+
+msgid "{path} already exists"
+msgstr "{path} esiste già"
+
+msgid "created {path}"
+msgstr "creato {path}"
+
+msgid "Project '{name}': {width}x{height} @ {fps} fps, background {background}"
+msgstr "Progetto '{name}': {width}x{height} @ {fps} fps, sfondo {background}"
+
+msgid "Graphical session: {session}"
+msgstr "Sessione grafica: {session}"
+
+msgid "camera: test source"
+msgstr "camera: sorgente di test"
+
+msgid "camera"
+msgstr "camera"
+
+msgid "Wayland: window focus cannot be read, scenes are switched by hand"
+msgstr "Wayland: il focus delle finestre non è leggibile, le scene si cambiano a mano"
+
+msgid "(from the GUI or with --scene); the screen is authorized on first use"
+msgstr "(dalla GUI o con --scene); lo schermo viene autorizzato al primo utilizzo"
+
+msgid "screen"
+msgstr "schermo"
+
+msgid "not open now"
+msgstr "non aperta ora"
+
+msgid "open ({title})"
+msgstr "aperta ({title})"
+
+msgid "window '{match}': {state}"
+msgstr "finestra '{match}': {state}"
+
+msgid "default"
+msgstr "predefinito"
+
+msgid "microphone"
+msgstr "microfono"
+
+msgid "system sound: monitor of the default output"
+msgstr "audio di sistema: monitor dell'uscita predefinita"
+
+msgid "video encoder"
+msgstr "encoder video"
+
+msgid "audio encoder"
+msgstr "encoder audio"
+
+msgid "Output: {path}"
+msgstr "Output: {path}"
+
+msgid "All set."
+msgstr "Tutto pronto."
+
+msgid "There are problems to fix."
+msgstr "Ci sono problemi da risolvere."
+
+msgid "error: {message}"
+msgstr "errore: {message}"
+
+msgid "scene: {scene}"
+msgstr "scena: {scene}"
+
+msgid "note: automatic scene switching is not available in this session (use --scene)"
+msgstr "nota: il cambio automatico di scena non è disponibile in questa sessione (usa --scene)"
+
+msgid "saved: {path}"
+msgstr "salvato: {path}"
+
+msgid "finishing…"
+msgstr "finalizzazione…"
+
+msgid "recording to {path} — Ctrl+C to stop"
+msgstr "registrazione in {path} — Ctrl+C per fermare"
+
+msgid "Webcams:"
+msgstr "Webcam:"
+
+msgid "Microphones:"
+msgstr "Microfoni:"
+
+msgid "Monitors:"
+msgstr "Monitor:"
+
+msgid "(primary)"
+msgstr "(primario)"
+
+msgid "Windows (for 'windows: - match: ...'):"
+msgstr "Finestre (per 'windows: - match: ...'):"
+
+msgid "Monitors and windows: on Wayland they are chosen through the system portal."
+msgstr "Monitor e finestre: su Wayland si scelgono tramite il portale di sistema."
+
+msgid "saved permissions forgotten"
+msgstr "autorizzazioni salvate dimenticate"
+
+msgid "cannot read {path}: {error}"
+msgstr "impossibile leggere {path}: {error}"
+
+msgid "invalid YAML: {error}"
+msgstr "YAML non valido: {error}"
+
+msgid "the project file must be a YAML mapping"
+msgstr "il file di progetto deve essere una mappa YAML"
+
+msgid "background: '{value}' is neither a color (#RRGGBB) nor an existing image"
+msgstr "background: '{value}' non è un colore (#RRGGBB) né un'immagine esistente"
+
+msgid "screen.margin: too large for the resolution"
+msgstr "screen.margin: troppo grande per la risoluzione"
+
+msgid "{where}: must be a list"
+msgstr "{where}: deve essere una lista"
+
+msgid "{where}: must be a string or a mapping with '{key}'"
+msgstr "{where}: deve essere una stringa o una mappa con '{key}'"
+
+msgid "nothing to record: configure 'camera' and/or at least one entry in 'windows'"
+msgstr "niente da registrare: configura 'camera' e/o almeno una voce in 'windows'"
+
+msgid "camera: must be a mapping, a device name or false"
+msgstr "camera: deve essere una mappa, il nome di un dispositivo o false"
+
+msgid "camera.closeup: the close-up scene needs a placement"
+msgstr "camera.closeup: la scena primo piano richiede una posizione"
+
+msgid "{where}: must be one of {values}"
+msgstr "{where}: deve essere uno tra {values}"
+
+msgid "camera.bubble: must be a mapping or false"
+msgstr "camera.bubble: deve essere una mappa o false"
+
+msgid "{where}: must be 'fullscreen', a position or a mapping"
+msgstr "{where}: deve essere 'fullscreen', una posizione o una mappa"
+
+msgid "{where}: must be between 0 and 1"
+msgstr "{where}: deve essere tra 0 e 1"
+
+msgid "output.filename: invalid placeholder ({error}); use {placeholders}"
+msgstr "output.filename: segnaposto non valido ({error}); usa {placeholders}"
+
+msgid "{where}: must be a list of domains"
+msgstr "{where}: deve essere una lista di domini"
+
+msgid "{where}: must be a mapping"
+msgstr "{where}: deve essere una mappa"
+
+msgid "{where}: invalid resolution '{value}' (e.g. 1920x1080 or 1080p)"
+msgstr "{where}: risoluzione non valida '{value}' (es. 1920x1080 o 1080p)"
+
+msgid "{where}: must be a positive integer or a percentage (e.g. 25%)"
+msgstr "{where}: deve essere un intero positivo o una percentuale (es. 25%)"
+
+msgid "{where}: must be an integer"
+msgstr "{where}: deve essere un intero"
+
+msgid "{where}: out of range ({value})"
+msgstr "{where}: fuori intervallo ({value})"
+
+msgid "{where}: must be a number"
+msgstr "{where}: deve essere un numero"
+
+msgid ""
+"project: {name}\n"
+"\n"
+"video:\n"
+"  resolution: 1920x1080\n"
+"  fps: 30\n"
+"  transition: 0.3            # seconds of transition between scenes\n"
+"\n"
+"# The virtual desktop the video is composed on: a color (#RRGGBB) or the path\n"
+"# of an image. When omitted, rec0's default background is used.\n"
+"# background: \"#1e2030\"\n"
+"\n"
+"# Close-up scene: active while rec0, or any window not listed below, has focus.\n"
+"camera:\n"
+"  device: default            # default, /dev/videoN or part of the device name\n"
+"  closeup: fullscreen        # or {{position: center, width: 70%}}\n"
+"  overlay:                   # small webcam during the share scene (false to hide it)\n"
+"    position: bottom-right\n"
+"    width: 240\n"
+"    shape: circle            # circle or rect\n"
+"  bubble:                    # round webcam window on screen while recording\n"
+"    size: 200                # (false to disable it); in the video the overlay follows it\n"
+"    position: bottom-right\n"
+"\n"
+"# Share scene: when one of these windows has focus it is shown on the virtual\n"
+"# desktop at the same position it has on the real screen. Matching is on the\n"
+"# window title or class: for a browser tab, use its title.\n"
+"screen:\n"
+"  monitor: primary\n"
+"  margin: 40                 # virtual desktop border around the real screen\n"
+"\n"
+"windows:\n"
+"  - match: Firefox\n"
+"  - match: Terminal\n"
+"\n"
+"audio:\n"
+"  microphone: default        # default, false, \"test\" or part of the device name\n"
+"  desktop: false             # system sound\n"
+"\n"
+"# Pages that are never recorded: when one has focus the share scene does not\n"
+"# start (or freezes on the last safe frame). rec0 has a built-in list of mail,\n"
+"# chat, password and banking sites (gmail.com, web.whatsapp.com, paypal.com…).\n"
+"# privacy:\n"
+"#   allow: [app.slack.com]           # lift built-in entries\n"
+"#   block:                           # add your own\n"
+"#     - mybank.example\n"
+"#     - {{domain: intranet.example, titles: [\"Intranet\"]}}\n"
+"\n"
+"# Applications to start before recording (optional)\n"
+"# launch:\n"
+"#   - command: firefox https://docs.python.org\n"
+"#   - command: gnome-terminal\n"
+"#     cwd: ~/Develop/project\n"
+"\n"
+"output:\n"
+"  # directory: ~/Videos/{name}   # default: the Videos folder, rec0 subfolder\n"
+"  filename: \"{{project}}-{{timestamp}}.mp4\"\n"
+"  format: mp4                # mp4 or mkv (more robust if the program is interrupted)\n"
+msgstr ""
+"project: {name}\n"
+"\n"
+"video:\n"
+"  resolution: 1920x1080\n"
+"  fps: 30\n"
+"  transition: 0.3            # secondi di transizione tra le scene\n"
+"\n"
+"# Il desktop virtuale su cui viene composto il video: un colore (#RRGGBB) o il\n"
+"# percorso di un'immagine. Se omesso si usa lo sfondo predefinito di rec0.\n"
+"# background: \"#1e2030\"\n"
+"\n"
+"# Scena primo piano: attiva quando rec0, o una finestra non elencata sotto, ha il focus.\n"
+"camera:\n"
+"  device: default            # default, /dev/videoN o parte del nome del dispositivo\n"
+"  closeup: fullscreen        # oppure {{position: center, width: 70%}}\n"
+"  overlay:                   # webcam piccola durante la condivisione (false per nasconderla)\n"
+"    position: bottom-right\n"
+"    width: 240\n"
+"    shape: circle            # circle o rect\n"
+"  bubble:                    # bolla con la webcam sullo schermo durante la registrazione\n"
+"    size: 200                # (false per disattivarla); nel video l'overlay la segue\n"
+"    position: bottom-right\n"
+"\n"
+"# Scena condivisione: quando una di queste finestre ha il focus viene mostrata\n"
+"# sul desktop virtuale nella stessa posizione che ha sullo schermo reale.\n"
+"# Il match è sul titolo o sulla classe: per una tab del browser usa il suo titolo.\n"
+"screen:\n"
+"  monitor: primary\n"
+"  margin: 40                 # bordo di desktop virtuale attorno allo schermo reale\n"
+"\n"
+"windows:\n"
+"  - match: Firefox\n"
+"  - match: Terminal\n"
+"\n"
+"audio:\n"
+"  microphone: default        # default, false, \"test\" o parte del nome del dispositivo\n"
+"  desktop: false             # audio di sistema\n"
+"\n"
+"# Pagine che non vengono mai registrate: quando una ha il focus la condivisione\n"
+"# non parte (o si congela sull'ultimo fotogramma sicuro). rec0 ha una lista\n"
+"# predefinita di siti di posta, chat, password e banche (gmail.com, web.whatsapp.com, paypal.com…).\n"
+"# privacy:\n"
+"#   allow: [app.slack.com]           # toglie voci dalla lista predefinita\n"
+"#   block:                           # aggiunge le tue\n"
+"#     - miabanca.example\n"
+"#     - {{domain: intranet.example, titles: [\"Intranet\"]}}\n"
+"\n"
+"# Applicazioni da avviare prima di registrare (opzionale)\n"
+"# launch:\n"
+"#   - command: firefox https://docs.python.org\n"
+"#   - command: gnome-terminal\n"
+"#     cwd: ~/Develop/progetto\n"
+"\n"
+"output:\n"
+"  # directory: ~/Video/{name}    # predefinita: la cartella Video, sottocartella rec0\n"
+"  filename: \"{{project}}-{{timestamp}}.mp4\"\n"
+"  format: mp4                # mp4 oppure mkv (più robusto se il programma si interrompe)\n"
+
+msgid "no H.264 encoder available (install gstreamer1.0-plugins-ugly)"
+msgstr "nessun encoder H.264 disponibile (installa gstreamer1.0-plugins-ugly)"
+
+msgid "no AAC encoder available (install gstreamer1.0-libav)"
+msgstr "nessun encoder AAC disponibile (installa gstreamer1.0-libav)"
+
+msgid "invalid pipeline: {error}"
+msgstr "pipeline non valida: {error}"
+
+msgid "cannot start the pipeline"
+msgstr "impossibile avviare la pipeline"
+
+msgid "timed out while finishing the file"
+msgstr "tempo scaduto durante la finalizzazione del file"
+
+msgid "paused, {domain} is private"
+msgstr "in pausa, {domain} è privato"

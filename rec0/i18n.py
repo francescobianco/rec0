@@ -32,6 +32,11 @@ _ = gettext.gettext
 ngettext = gettext.ngettext
 
 
+def N_(message: str) -> str:
+    """Mark a string for translation without translating it yet."""
+    return message
+
+
 def pkgdata(name: str) -> Path:
     """Path of a bundled data file (e.g. the default background)."""
     if config.PKGDATADIR:
