@@ -6,6 +6,26 @@ All notable changes to rec0 are documented here. The format follows
 
 ## [Unreleased]
 
+### Audio
+
+- Pauses are lowered with sample-continuous fades. The previous envelope was a
+  volume step every 21 ms frame, an audible click at every transition: on a
+  real recording the jump between two samples went from 0.008 before that
+  stage to 0.122 after it.
+- Loudness normalisation is a measured constant gain followed by the true-peak
+  limiter: `loudnorm linear=true` silently fell back to dynamic gain riding when
+  the loudness range or the peaks exceeded its limits.
+- The denoise check compares the same chain with and without the denoiser on
+  sample-aligned frames; the reduced RNNoise mix and the spectral fallback are
+  verified too, and denoising is bypassed when even the fallback takes more
+  than 3 dB of voice.
+- Filter delays are compensated right after each denoiser, with the buffered
+  tail padded in; the limiter's lookahead is undone at its internal rate.
+- The echo-cancelled voice is mono: its stereo duplication is now at full level
+  and loudness is measured after it.
+- Technical dossier: circuit audit, measurement and listening protocol,
+  improvement strategy (`docs/tech/audio-processing.md`).
+
 ## [0.1.0] - 2026-10-09
 
 First public release.

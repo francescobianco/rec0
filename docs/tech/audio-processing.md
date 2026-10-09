@@ -12,7 +12,9 @@
 > the unprocessed original, with a voice that "gets better and worse by turns".
 > The fixes described below measurably reduced the problems, but they have not
 > been confirmed by listening, and several parameters are still hand-tuned on
-> two recordings. Read this document as the record of an ongoing
+> two recordings. The subsequent circuit audit (§16) fixes hidden dynamic
+> normalisation, misaligned denoise checks and pause timing; its renders still
+> need listening approval. Read this document as the record of an ongoing
 > investigation, not as the description of a finished feature.
 
 This dossier collects everything about how rec0 handles audio: the capture,
@@ -38,6 +40,9 @@ Contents:
 13. [Open problems](#13-open-problems)
 14. [Proposed next steps](#14-proposed-next-steps)
 15. [Reproducing the analyses](#15-reproducing-the-analyses)
+16. [Circuit audit and corrections](#16-circuit-audit-and-corrections)
+17. [Measurement and listening protocol](#17-measurement-and-listening-protocol)
+18. [Improvement strategy](#18-improvement-strategy)
 
 ---
 
@@ -70,7 +75,7 @@ flowchart LR
     aec -->|clean voice + echo-only mask| an[analysis + VAD]
     an --> plan[plan: which circuits]
     plan --> guard[denoise feedback check]
-    guard --> meas[loudness pass 1]
+    guard --> meas[loudness measurement]
     meas --> render[render: voice chain<br/>+ system sound untouched<br/>+ limiter on the sum]
   end
   render --> final[(name.mp4)]
@@ -224,27 +229,44 @@ enabled only when the measurements call for it:
 | presence | 3-8 kHz < -26 dB under the voice band | `equalizer 3.5 kHz` | +2 … +5 dB |
 | deesser | 5-9 kHz > -10 dB | `deesser` | fixed |
 | compressor | there is speech | `acompressor` | 2:1 / 3:1 / 4:1 from the LRA (7 / 12 LU), threshold speech +6 dB |
-| loudness | always | `loudnorm` two-pass, linear | -14 / -16 / -23 LUFS (youtube / podcast / broadcast) |
+| loudness | always | `loudnorm` measurement + constant gain | -14 / -16 / -23 LUFS (youtube / podcast / broadcast) |
 | limiter | always | `alimiter`, 4× oversampled | true peak -1 dBTP |
 
-**Denoise feedback check (`guard_denoise`)**: before rendering, the chain up
-to the denoiser is run, and the level lost by the speech frames is measured
-(preamp gain accounted for). If RNNoise takes more than 3 dB of speech, its
-mix is lowered or it is replaced by a gentle spectral denoiser (`afftdn`).
-The rule is that the voice comes before cleanliness.
+**Denoise feedback check (`guard_denoise`)**: the chain up to the denoiser
+is compared with the **same upstream chain without the denoiser**, on
+sample-aligned speech frames. Median loss must stay within 3 dB. A reduced
+RNNoise mix is measured again; the `afftdn` fallback is also measured,
+including when it was selected initially. If the fallback still exceeds the
+limit, denoising is bypassed. Failed trials raise an error instead of
+reporting zero loss. This protects measured speech level, not every aspect
+of perceived quality: spectral damage can pass a level-only check.
 
 > [!NOTE]
 > On every real recording with speakers, RNNoise was measured to take
 > **19.6-30.8 dB** of "speech" and was replaced by `afftdn`. Part of that
 > "speech" was the video's residue, which RNNoise rightly removes. Even with
-> the echo-only mask, the check still reports 19.6 dB, which needs
-> investigating (open problem P4).
+> the echo-only mask, the old check reported 19.6 dB. The aligned,
+> denoiser-only check reports about **17.7 dB** on `dev-20261009-165346`:
+> the loss was mostly real according to this metric, not just a timing error.
+> The verified spectral fallback loses approximately 0.0 dB on those frames.
+> Neither number proves that every frame labelled speech contains the author.
 
 ## 7. Rendering
 
-- **Two passes**: a measuring `loudnorm` pass after the planned stages, then
-  the render with `loudnorm linear=true` using the measured values (no
-  dynamic gain riding), then the oversampled limiter.
+- **Measurement then constant gain**: `loudnorm` measures the planned voice
+  chain; rendering applies `volume=(target LUFS - measured LUFS)dB`, followed
+  by the oversampled limiter. The previous `loudnorm linear=true` could
+  silently revert to dynamic processing when LRA or peaks exceeded its
+  constraints. This occurred on the real problem recording (§16).
+- Measurement uses the same aligned voice chain and channel conversion as
+  rendering. An echo-cancelled voice is mono even if the captured microphone
+  was stereo; its actual channel count determines the full-level stereo
+  duplication. Loudness is measured **after** that duplication for a mix.
+- Constant normalisation does not remove the planned leveler or compressor.
+  Those remain intentional dynamic stages and need their own quality checks.
+  The limiter can lower achieved loudness; the report records final LUFS,
+  true peak, requested constant gain and whether the voice peaks require
+  limiting. That flag does not measure how much the final mix was limited.
 - **With a system sound track** the render is a filtergraph. The voice
   (cleaned by the echo canceller when available) goes through the chain; the
   system sound is resampled and converted to stereo **without any other
@@ -263,14 +285,20 @@ The rule is that the voice comes before cleanliness.
 Several filters delay the voice. Since the system sound bypasses the chain,
 any delay puts the voice out of sync with the picture and with the system
 sound. A delayed copy of the video's echo also plays against the clean track
-(comb filtering, the "room" effect). All delays are measured by
-cross-correlation and undone with `atrim=start_sample=N,asetpts=PTS-STARTPTS`:
+(comb filtering, the "room" effect). Filter delays are measured by
+cross-correlation and undone with `atrim=start_sample=N,asetpts=PTS-STARTPTS`.
+Denoiser compensation now happens **immediately after that filter**, at
+48 kHz, before the VAD-driven pause envelope. Silence is padded before the
+filter to recover its delayed tail; padding and trimming preserve the voice
+length. The processing and mixdown limiters also receive padding before their
+lookahead is removed, at the internal 192 kHz rate. Pause commands run on 1024-sample frames, matching analysis.
+The original delay measurements were:
 
 | Source | Delay | Compensation |
 |---|---|---|
 | `arnndn` (RNNoise, 10 ms frames) | 480 samples (10.0 ms) | `FILTER_DELAYS` |
 | `afftdn` (spectral denoise) | 1200 samples (25.0 ms) | `FILTER_DELAYS` |
-| `alimiter attack=2` (lookahead) | 96 samples (2.0 ms), on the whole mix | `LIMITER_DELAY` |
+| `alimiter attack=2` (lookahead) | nominally 96 samples at 48 kHz; actual 383 samples at its 192 kHz working rate (1.995 ms), on the whole mix | `_limit_chain()`: pad/trim at 192 kHz before downsampling |
 | AAC encoder priming in Matroska (no edit list) | 1024 samples (21.3 ms) | `AAC_DELAY`, MKV/MKA/WebM only |
 | `highpass` ×2 at 80 Hz | ~1.5 ms in a cross-correlation | none: it is a low-frequency phase shift, not a delay |
 | `loudnorm`, `dynaudnorm`, `acompressor`, `volume`, 4× resampling | 0 | — |
@@ -425,8 +453,13 @@ to raise (B9).
   from the first decoded one. GStreamer's MP4s have no edit list for the AAC
   priming, while ffmpeg's do. Compare files written by the same muxer, or
   account for it.
+- **Downmixing can change the measured gain.** FFmpeg's stereo-to-mono
+  conversion depends on the negotiated format/layout and can sum duplicated
+  channels at +3 dB relative to either channel. For channel fidelity, decode
+  `pan=mono|c0=c0` or compare the same layout on both sides. A gain error in
+  the measurement must not become a compensating error in processing.
 - **Nothing replaces listening.** All the numbers above improved, and the
-  author still hears problems. There is no listening test protocol yet (P8).
+  author still hears problems. The protocol in §17 still needs to be executed (P8).
 
 ## 13. Open problems
 
@@ -435,11 +468,11 @@ to raise (B9).
 | P1 | **Quality not confirmed by listening** after `71ae9ab` | the author's last verdict predates it |
 | P2 | **Residue beyond the linear model**: reverberant tail > 85 ms, speaker non-linearity | stage 2 is gentle on purpose; a stronger post-filter costs voice |
 | P3 | **Hand-tuned constants**: `BLOCK`, `TAIL`, `OVER`, `FLOOR`, `ECHO_ONLY_DB`, VAD thresholds | chosen on two recordings; they should be derived from each recording ([§14](#14-proposed-next-steps)) |
-| P4 | **RNNoise always replaced by `afftdn` with speakers** (19.6-30.8 dB "speech" loss) | the speech frames used by the check may still include residue; `afftdn` is weaker and adds 25 ms |
+| P4 | **Denoise quality with speakers** | checks now align samples and isolate denoising; fallback and reduced mixes are verified. Large RNNoise loss persists on `165346`; reduced RNNoise passes on `183203`. VAD and spectral preservation remain open |
 | P5 | **Large gains** on quiet microphones: preamp +12…+17 dB, leveler up to +18 dB, normalisation on top | any residue left in frames classified as speech is raised with the voice |
 | P6 | **No echo cancelling when processing is off** (`mixdown`) | the bleed stays at its natural level, less audible, but the copy still sits 11-18 ms behind the clean track |
 | P7 | **Voice/system balance** (E5) | the voice goes to -14 LUFS, system sound keeps its level: on `dev-20261009-165346` the video ends up ~10 dB under the voice, unlike in the room |
-| P8 | **No listening protocol, no reference corpus** | decisions rest on objective metrics only |
+| P8 | **Reference corpus and listening approval missing** | protocol now defined in §17, not yet executed as a listening study |
 | P9 | **Double talk**: while the speaker talks over the video, the estimate's variance grows (the voice is noise for the estimator) | longer blocks help but follow the drift worse |
 | P10 | Flaky test (B10) | — |
 | P11 | GStreamer MP4s carry the AAC priming without an edit list | the effect on audio/video sync of the *original* files was not measured |
@@ -500,3 +533,193 @@ ratios = echo.cancel("NAME.original.mp4", "/tmp/voice.wav")   # None: nothing to
 The helpers `_read`, `_two_tracks` and `_lag_ms` in `tests/test_audio.py`
 decode a track to a numpy array, build a two-track test file and measure a
 lag.
+
+
+## 16. Circuit audit and corrections
+
+Audit of 2026-10-09. These are implementation corrections, **not a declaration
+that E1–E7 are all met**. In particular, perceived stability, double-talk
+quality, residual room sound and voice/system balance remain acceptance work.
+
+### Confirmed defects
+
+| Defect | Evidence / consequence | Current correction |
+|---|---|---|
+| Hidden dynamic normalisation | On `165346`, the old post-chain measurement was -24.43 LUFS, -10.78 dBTP, LRA 14.50 LU. The render requested LRA 11; even the target gain would put peaks at -0.35 dBTP. Either condition prevents linear mode. Another gain controller acted after the leveler and compressor | Explicit constant `volume` gain; one final oversampled limiter |
+| Denoise check included upstream losses | The old comparison used raw analysis levels plus preamp gain, so high-pass/dehum losses also counted against RNNoise | Compare otherwise identical chains with and without denoising |
+| Denoise check compared different samples | The 10/25 ms filter delay was not removed in the measurement trial | Shared `_voice_chain()` aligns each denoiser before subsequent stages and measurements |
+| Pause envelope preceded delay compensation | VAD timestamps referred to the original voice, but pause gain acted on delayed audio | Compensate immediately after denoising; use analysis-sized frames for pause commands |
+| Reduced mix and fallback were trusted without checking | The initial RNNoise check did not establish safety of the selected replacement | Re-measure each selected candidate; bypass if measured loss still exceeds 3 dB |
+| Fallback noise floor used the wrong gain domain | `afftdn` received the original noise floor after the preamp had raised the signal | Add preamp gain to the fallback noise-floor parameter |
+| Channel layout inferred from the wrong source | AEC writes mono; rendering previously used the captured microphone's channel count. Default mono/stereo conversion can attenuate each side by 3 dB | Use the actual cleaned source's channel count; measure after the same stereo conversion used for rendering |
+| Delay trimming discarded the tail | Removing startup samples without feeding the buffered tail shortened the voice | Pad before denoiser and limiter, then trim their known delays |
+| Limiter trim rounded to 48 kHz samples | The actual lookahead is `attack_samples - 1`: 383 samples at 192 kHz. Trimming 96 samples after downsampling advanced the signal by 0.25 sample | Pad/trim 383 samples at the internal rate in both processing and mixdown; sample-level system fidelity regression |
+| Failed measurement could appear safe | Empty trial output could produce zero estimated loss | Fail the trial explicitly; do not interpret missing evidence as preserved voice |
+
+The [FFmpeg loudnorm documentation](https://ffmpeg.org/ffmpeg-filters.html#loudnorm)
+explicitly describes the conditions for reverting from linear to dynamic mode.
+The former statement in §7 that `linear=true` guaranteed no gain riding was
+incorrect. Constant gain removes that hidden controller; it does not prove
+that the remaining leveler, compressor and pause envelope sound natural.
+
+### Checks and real renders
+
+On `165346`, the old guard reported 19.64 dB loss. Correcting alignment and
+isolating the denoiser reduced this to about 17.69 dB, still unacceptable.
+The replacement `afftdn`, measured at its actual input level, loses about
+0.00 dB on the selected speech frames. On `183203`, a reduced RNNoise mix
+of about 54% passes the recheck at about 2.7 dB loss. These are **median
+frame-level losses**, not intelligibility or perceptual quality scores.
+
+| Recording | Current final integrated loudness | Current final true peak | Current LRA |
+|---|---:|---:|---:|
+| `dev-20261009-165346` | -14.68 LUFS | -1.67 dBTP | 13.7 LU |
+| `dev-20261009-183203` | -14.65 LUFS | -1.41 dBTP | 12.8 LU |
+
+Measured from the encoded output using the same FFmpeg loudness pass. The
+pre-audit rerender of `165346` was -14.52 LUFS, -2.52 dBTP, LRA 10.9 LU.
+A larger LRA is not automatically worse: the removed hidden controller used
+to compress it. These aggregate numbers do not establish steadier timbre.
+
+An experiment limiting the constant gain to available peak headroom made the
+voice-only regression output -18.06 LUFS instead of the required -14 ±1.
+That experiment was rejected. Current code applies the target constant gain
+and lets the existing limiter handle peaks. Sustained limiting is still a
+risk to measure; target loudness alone is not an acceptance criterion.
+
+Validation: `python3 -m pytest -q` completed with **49 passed** using
+FFmpeg `6.1.1-3ubuntu5`. The pre-audit baseline is revision `d2144cf`; current
+results use the working-tree corrections described here. Preserve the final
+revision or patch with the audio artifacts when archiving this comparison.
+
+Regression coverage now includes:
+
+- Constant sample gain on a signal with large level changes and a transient,
+  including a case where the target gain exceeds peak headroom.
+- Denoise loss isolated from upstream attenuation.
+- Rejection of damaging fallbacks and insufficient mix reductions.
+- Denoiser delay and full output duration, including the buffered tail.
+- System-track sample level, alignment and duration through a transparent
+  PCM mix below the limiter ceiling.
+- Failed denoise trials reported as failures.
+- Existing encoded-output loudness, true peak, synthetic echo removal,
+  synchronisation and original-restoration checks.
+
+The PCM system-track test isolates processing errors from AAC loss. It does
+not establish transparency when the summed voice and system sound drive the
+limiter. The existing synthetic echo case uses shaped noise and a fixed room
+response; it does **not** cover real video speech, clock drift or moving speakers.
+The system fidelity test reads one stereo channel explicitly to avoid the
+stereo-to-mono measurement trap in §12.
+
+## 17. Measurement and listening protocol
+
+### Keep the evidence reproducible
+
+For each reference recording, keep the untouched multitrack original, code
+revision, FFmpeg version, selected stages and parameters, analysis/report JSON,
+and output file. Record microphone/output devices, speaker volume, room,
+headphone/speaker use and any movement. Keep human-labelled intervals separate
+from VAD decisions: a detector must not grade itself.
+
+The CLI `--dry-run` currently analyses the original first track directly; it
+does not run AEC or the denoise guard. Its plan is therefore **not** the final
+plan for speaker recordings. Use the `Report` returned by `audio.process()`
+for the actual decisions, and save `report.to_json()` beside each candidate.
+Temporary pause-command paths in reports are diagnostic, not reusable after
+the processing temporary directory is removed.
+
+### Listening, with controlled volume
+
+For each recording prepare: microphone alone; untouched mic+system mix;
+AEC-only mic+system mix; previous full processing; current full processing.
+Also retain the isolated microphone after each relevant stage. A media player
+opening the original multitrack file usually plays just one track, so it is
+not a valid substitute for the untouched sum.
+
+Compare the same time ranges, switching between files without changing playback
+volume. Prepare an additional loudness-matched set by applying **one constant
+gain per whole file**, bringing louder candidates down to the quietest
+candidate. Do not normalise each excerpt independently: that would hide the
+level instability being evaluated. Keep the native-level set to assess E1/E5.
+Prefer headphones for comparison so playback-room echo does not contaminate
+the judgment. Randomise A/B names when possible.
+
+Use labelled examples of voice alone, system alone, double talk, quiet words,
+consonant onsets, word endings, breaths, keyboard sounds, and changes of speaker
+volume or microphone position. For every defect record its start/end time,
+which candidate is worse, and whether it is lost speech, changing timbre,
+pumping, echo, clicks, wrong balance or delay. A numeric score without a
+location and description is not sufficient to tune the circuit.
+
+For `165346`, the historical 6–11, 11–15, 15–19, 19–26, 26–30 and 30–37 s
+intervals are useful starting points. They must be labelled by listening;
+the old coherence table is not ground-truth speaker activity.
+
+### Measure each requirement separately
+
+| Requirement / failure | Measurement | Control against misleading results |
+|---|---|---|
+| Voice preservation | On synthetic mixtures, residual against known clean voice, gain error and correlation; on real speech, per-interval level and spectral changes | Retain absolute gain error as well as scale-invariant measures; attenuation must not score as cleanup |
+| Echo removal | Echo-only residual level; reference coherence by band; synthetic residual against clean voice | Evaluate held-out intervals and double talk separately; in-sample least-squares coherence is optimistic |
+| Stable processing | Per-speech-interval gain relative to aligned pre-stage audio; median, 90th/99th percentile and maximum change, plus spectral change | Use the same independently labelled speech intervals across candidates; exclude intended pauses without hiding quiet words |
+| Noise reduction | Noise floor and loud transient levels in labelled pauses, before/after at matched speech level | SNR improvement can be caused by damaged or misclassified speech; include listening and speech preservation |
+| System fidelity | Before encoding, difference from the original system track with voice absent; after AAC, gain and lag error plus residual | Below limiter threshold require transparency; evaluate limiter-active segments separately |
+| Loudness and peaks | Final encoded mix LUFS/LRA/dBTP and isolated processed voice loudness | Measure final layout and codec; a voice target does not imply the same loudness for an arbitrary sum |
+| Limiter side effects | Gain reduction envelope, time spent limiting, longest limiting interval | The current report only predicts whether voice peaks need limiting; envelope instrumentation is future work |
+| Sync and duration | Sample-index lag and sample counts, plus audio/video event alignment | Test 44.1/48 kHz inputs, mono/stereo, nonzero timestamps and container priming; an audio correlation alone does not validate picture sync |
+| Balance | Voice/system level ratio on matched labelled intervals; listening against the intended reference | “As heard in the room” is not directly recoverable from microphone/system digital levels without an acoustic reference |
+
+For every adaptive stage, run an **ablation**: identical input and identical
+remaining stages, with only that stage bypassed. Measure both its direct
+output and the final rendered mix: later normalisation can erase a useful
+noise reduction or amplify a harmful residue. Keep loudness matching fixed
+across the comparison. Change one mechanism at a time before combining fixes.
+
+## 18. Improvement strategy
+
+The next work should add evidence and reduce unjustified processing, not
+increase attenuation until one aggregate score looks better.
+
+1. **Establish a small labelled corpus.** Include clean voice, quiet/noisy
+   microphones, speakers and headphones, system speech/music, long pauses,
+   double talk and movement. Keep some rooms/devices out of parameter tuning.
+   Existing real recordings are regression examples, not an independent
+   evaluation set. Obtain listening verdicts on the current corrections first.
+2. **Instrument actual gain through the chain.** Log short-window gain for
+   AEC residual suppression, denoiser, pauses, leveler, compressor and limiter.
+   Identify which stage causes each reported fluctuation. Extend the current
+   median denoise guard to upper-tail and contiguous-interval losses only
+   after validation on labelled quiet speech; do not choose thresholds on one
+   recording. Add spectral preservation checks because level alone misses
+   metallic or muffled voice.
+3. **Make decisions confidence-aware.** Treat uncertain echo/voice frames as
+   uncertain rather than definitely silent. Test soft masks and hysteresis
+   against clipped consonants and pumping. Consider limiting the leveler's
+   additional gain during uncertain stretches; select any bound from measured
+   failure cases and verify that quiet genuine speech is still intelligible.
+4. **Improve AEC using independent evidence.** Estimate tail/clock drift from
+   suitable reference-active intervals, validate on different intervals, and
+   fall back conservatively when excitation is insufficient. Benchmark against
+   established cancellers on the same corpus before replacing the current
+   least-squares model. Test drift, long tails, non-linear speakers and double
+   talk explicitly. Optional calibration should supply a prior, not assume
+   the room or microphone position never changes.
+5. **Define the balance policy.** E2 (unchanged system track), E1 (voice at a
+   target) and E5 (room-like balance) can conflict. Specify which has priority
+   and how the user supplies or confirms a reference balance. Do not silently
+   infer a correct acoustic balance from residual echo energy.
+6. **Add acceptance gates, then tune.** Require no missing/truncated speech,
+   no sync regression and no system-track gain change below the limiter
+   ceiling. Retain the existing numeric loudness/peak tests. Add perceptual
+   acceptance per scenario, with failures retained in the corpus. Do not
+   accept an echo/SNR improvement that worsens voice preservation.
+7. **Track reproducibility and uncertainty.** Repeat only suspicious or
+   changed cases; preserve random seeds and versions. Investigate the earlier
+   flaky SNR result using saved waveforms and fixed speech labels. Report
+   distributions across recordings, not just the best score or global mean.
+
+Not implemented by this audit: acoustic calibration, a replacement AEC,
+self-tuned echo masks, limiter-envelope telemetry, a new leveler, balance
+policy, or AEC on the processing-off path. Those remain proposals whose
+benefit must be demonstrated under the protocol above.

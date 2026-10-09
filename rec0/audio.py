@@ -23,7 +23,7 @@ Stages, in signal order:
     presence    lift intelligibility around 3.5 kHz         if the voice sounds muffled
     deesser     tame harsh "s" sounds                       if sibilance is strong
     compressor  steady speech dynamics                      ratio from the dynamic range
-    loudness    two-pass EBU R128 to the platform target    always
+    loudness    measured constant gain to platform target    always
     limiter     true-peak safety                            always
 """
 
@@ -50,7 +50,7 @@ FILTER_DELAYS = {
     "arnndn": 480,            # RNNoise works on 10 ms frames
     "afftdn": 1200,           # spectral denoise: 25 ms of analysis window
 }
-LIMITER_DELAY = 96            # samples: alimiter's 2 ms attack is a lookahead
+LIMITER_DELAY = 96            # nominal 2 ms lookahead at RATE; actual ring delay is attack_samples - 1
 ECHO_ONLY_DB = 0.0            # cleaned microphone below the echo removed there: the speaker is silent
 AAC_DELAY = 1024              # samples: the AAC encoder's priming; MP4 skips it (edit list), Matroska does not
 FRAME = 1024                  # analysis frame, samples (21.3 ms at 48 kHz)
@@ -318,21 +318,24 @@ def _smooth(mask: list[bool]) -> list[bool]:
 
 
 def pause_commands(a: Analysis, depth_db: float) -> str:
-    """asendcmd script lowering what is not speech by `depth_db`, with smooth ramps."""
+    """Sample-continuous fades at VAD transitions, including interrupted ramps."""
     low = 10 ** (-depth_db / 20)
-    attack = VAD_ATTACK / WINDOW      # frames to open (the margin already anticipates speech)
-    release = VAD_RELEASE / WINDOW    # frames to close
-    lines, gain, last = [], 1.0, None
-    for i, sp in enumerate(a.speech):
-        target = 1.0 if sp else low
-        # Linear-in-dB ramp towards the target.
-        g_db, t_db = 20 * math.log10(gain), 20 * math.log10(target)
-        step = depth_db / (attack if t_db > g_db else release)
-        g_db = min(t_db, g_db + step) if t_db > g_db else max(t_db, g_db - step)
-        gain = 10 ** (g_db / 20)
-        if last is None or abs(20 * math.log10(gain / last)) > 0.25 or (gain == target and gain != last):
-            lines.append(f"{i * WINDOW:.4f} volume@pauses volume {gain:.5f};")
-            last = gain
+    lines = []
+    start, length, initial, target = 0, 1, 1.0, 1.0
+    for sp, i, _end in _runs(a.speech):
+        sample = i * FRAME
+        current = initial + (target - initial) * min(1.0, (sample - start) / length)
+        new = 1.0 if sp else low
+        if new == target:
+            continue
+        start, initial, target = sample, current, new
+        length = max(1, round(RATE * (VAD_ATTACK if new > current else VAD_RELEASE)))
+        # Execute at this frame's start, never a frame late due to decimal rounding.
+        timestamp = max(0.0, sample / RATE - 1e-7)
+        commands = (("start_sample", start), ("nb_samples", length),
+                    ("silence", f"{initial:.12g}"), ("unity", f"{target:.12g}"))
+        lines.append(f"{timestamp:.9f} " + ", ".join(
+            f"afade@pauses {key} {value}" for key, value in commands) + ";")
     return "\n".join(lines) + "\n"
 
 
@@ -516,7 +519,7 @@ def plan(a: Analysis, target: str = "youtube") -> Plan:
     if a.speech and 0.02 < a.active_ratio < 0.99 and pause_after - PAUSE_TARGET > NOISE_MIN_REDUCTION:
         depth = round(_clamp(pause_after - PAUSE_TARGET, 6, PAUSE_MAX_DEPTH))
         S.append(Stage("pauses", True, _("breaths and noise between words lowered by {db} dB").format(db=depth),
-                       "asendcmd=f={pause_commands},volume@pauses=volume=1:eval=frame:precision=float",
+                       "asendcmd=f={pause_commands},afade@pauses=t=in:ns=1:silence=1:unity=1",
                        param=depth))
     else:
         S.append(Stage("pauses", False, _("pauses already quiet")))
@@ -604,49 +607,73 @@ def _trial_levels(src: str, head: list[str], chain: str) -> list[float]:
          f"asetnsamples=n={win}:p=0,astats=metadata=1:reset=1:measure_perchannel=none:"
          f"measure_overall=RMS_level,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-",
          *_null()], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise AudioError("denoise trial failed: " + r.stderr.strip().splitlines()[-1])
     return _window_levels(r.stdout)
 
 
+def _voice_chain(stages: list[Stage]) -> str:
+    """Keep every stage on the analysis timeline, including the pause envelope."""
+    filters = [f"aresample={RATE}"]
+    for stage in stages:
+        if not stage.enabled or not stage.filter or stage.name == "limiter":
+            continue
+        delay = FILTER_DELAYS.get(stage.filter.split("=", 1)[0], 0)
+        if delay:
+            # Feed the delayed tail through the filter before dropping its startup.
+            filters.append(f"apad=pad_len={delay}")
+        if stage.name == "pauses":
+            filters.append(f"asetnsamples=n={FRAME}:p=0")
+        filters.append(stage.filter)
+        if delay:
+            filters.extend((f"aresample={RATE}", _realign(delay)))
+    return ",".join(filters)
+
+
 def speech_loss(a: Analysis, src: str, head: list[str], p: Plan) -> float:
-    """dB of level the speech windows lose through the stages up to the denoiser
-    (the preamp gain is accounted for)."""
-    upto = []
-    for s in p.stages:
-        if s.enabled and s.filter:
-            upto.append(s.filter)
-        if s.name == "denoise":
-            break
-    after = _trial_levels(src, head, ",".join(upto))
-    gain = next((float(s.filter[7:-2]) for s in p.stages if s.name == "preamp" and s.enabled), 0.0)
-    # Frames the voice activity detector marked as speech (and not silent).
-    pairs = [(b, c) for b, c, sp in zip(a.levels, after, a.speech or [False] * len(a.levels))
+    """Loss attributable to denoising alone, on aligned speech windows."""
+    index = next((i for i, s in enumerate(p.stages) if s.name == "denoise"), None)
+    if index is None:
+        return 0.0
+    before = _trial_levels(src, head, _voice_chain(p.stages[:index]))
+    after = _trial_levels(src, head, _voice_chain(p.stages[:index + 1]))
+    pairs = [(b, c) for b, c, sp in zip(before, after, a.speech)
              if sp and b > SILENCE_DB]
     if not pairs:
-        return 0.0
-    return statistics.median(b + gain - c for b, c in pairs)
+        raise AudioError("denoise trial produced no usable speech windows")
+    return statistics.median(b - c for b, c in pairs)
 
 
 def guard_denoise(a: Analysis, src: str, head: list[str], p: Plan) -> float:
-    """Feedback: back the denoiser off if it is eating the voice. Returns the measured loss."""
+    """Check the selected denoiser, including reduced mixes and the fallback."""
     stage = next((s for s in p.stages if s.name == "denoise" and s.enabled), None)
-    if stage is None or not stage.filter.startswith("arnndn"):
+    if stage is None:
         return 0.0
     loss = speech_loss(a, src, head, p)
+    initial_loss = loss
     if loss <= SPEECH_LOSS_MAX:
         stage.reason += " · " + _("voice kept ({db:.1f} dB)").format(db=-loss)
         return loss
-    if loss <= 2 * SPEECH_LOSS_MAX:
-        mix = re.search(r"mix=([\d.]+)", stage.filter)
-        new = max(0.3, float(mix[1]) * SPEECH_LOSS_MAX / loss) if mix else 0.5
-        stage.filter = re.sub(r"mix=[\d.]+", f"mix={new:.2f}", stage.filter)
-        stage.reason += " · " + _("backed off to {mix:.0%}, it was taking {db:.1f} dB of voice").format(
-            mix=new, db=loss)
-    else:
-        nf = round(_clamp(a.noise_floor_db, -80, -20))
+    if stage.filter.startswith("arnndn"):
+        if loss <= 2 * SPEECH_LOSS_MAX:
+            mix = re.search(r"mix=([\d.]+)", stage.filter)
+            new = float(mix[1]) * SPEECH_LOSS_MAX / loss if mix else 0.5
+            stage.filter = re.sub(r"mix=[\d.]+", f"mix={new:.2f}", stage.filter)
+            loss = speech_loss(a, src, head, p)
+            if loss <= SPEECH_LOSS_MAX:
+                stage.reason = _("neural denoise backed off to {mix:.0%}; voice loss {db:.1f} dB").format(
+                    mix=new, db=loss)
+                return initial_loss
+        gain = next((float(s.filter[7:-2]) for s in p.stages
+                     if s.name == "preamp" and s.enabled), 0.0)
+        nf = round(_clamp(a.noise_floor_db + gain, -80, -20))
         stage.filter = f"afftdn=nr=10:nf={nf}:tn=1"
-        stage.reason = _("weak voice under noise: gentle spectral denoise (neural took {db:.1f} dB of voice)").format(
-            db=loss)
-    return loss
+        loss = speech_loss(a, src, head, p)
+        stage.reason = _("spectral denoise; verified voice loss {db:.1f} dB").format(db=loss)
+    if loss > SPEECH_LOSS_MAX:
+        stage.enabled = False
+        stage.reason = _("denoise bypassed: taking {db:.1f} dB of voice").format(db=loss)
+    return initial_loss
 
 
 def _realign(samples: int) -> str:
@@ -666,6 +693,24 @@ def _append(chain: str, filt: str) -> str:
     return chain[:-5] + f",{filt}[out]" if chain.endswith("[out]") else f"{chain},{filt}"
 
 
+def normalization_gain(p: Plan, measured: dict) -> tuple[float, bool]:
+    """Constant gain and whether the final limiter will need to catch peaks."""
+    integrated, peak = float(measured["input_i"]), float(measured["input_tp"])
+    if not math.isfinite(integrated) or not math.isfinite(peak):
+        raise AudioError("cannot normalize non-finite loudness measurements")
+    wanted = p.target_lufs - integrated
+    headroom = p.target_tp - 0.5 - peak
+    return wanted, headroom < wanted
+
+
+def _limit_chain(limiter: str) -> str:
+    """Flush and undo the limiter's exact lookahead at its working sample rate."""
+    oversampling = 4
+    delay = LIMITER_DELAY * oversampling - 1
+    return (f"aresample={RATE * oversampling},apad=pad_len={delay},{limiter},"
+            f"{_realign(delay)},aresample={RATE}")
+
+
 def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: tuple[int, int] = (2, 2),
                  voice_input: str = "0:a:0") -> str:
     """Final filter: planned stages, then linear loudness normalisation, then the limiter.
@@ -674,22 +719,21 @@ def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: 
     is processed, the system sound is added exactly as it was heard, and only the
     true-peak limiter acts on the sum (it is transparent unless the peaks clip).
     """
-    loud = (f"loudnorm=I={p.target_lufs}:TP={p.target_tp}:LRA=11"
-            f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
-            f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
-            f":offset={measured['target_offset']}:linear=true")
+    # loudnorm linear=true silently falls back to dynamic mode if LRA or
+    # peaks exceed its limits. Use an explicit constant gain instead, controlled
+    # by the final true-peak limiter only on peaks that exceed its ceiling.
+    gain, _ = normalization_gain(p, measured)
+    loud = f"volume={gain:.6f}dB"
     stages = [s for s in p.stages if s.enabled and s.filter]
-    before = ",".join(s.filter for s in stages if s.name != "limiter")
+    before = _voice_chain(stages)
     limiter = next((s.filter for s in stages if s.name == "limiter"), "")
     # The limiter runs 4x oversampled so that it also catches inter-sample (true) peaks.
     # Its lookahead (the attack) and the denoisers delay the sound: both are trimmed,
     # so the voice stays in sync with the picture and with the system sound.
-    oversampled = (f"aresample={RATE * 4},{limiter},aresample={RATE},{_realign(LIMITER_DELAY)}" if limiter
-                   else f"aresample={RATE}")
-    denoise = _realign(sum(d for s in stages for f, d in FILTER_DELAYS.items() if s.filter.startswith(f)))
+    oversampled = _limit_chain(limiter) if limiter else f"aresample={RATE}"
     if not system_track:
-        return ",".join(x for x in (before, loud, denoise, oversampled) if x)
-    voice = ",".join(x for x in (before, loud, f"aresample={RATE}", denoise) if x)
+        return ",".join(x for x in (before, loud, oversampled) if x)
+    voice = ",".join(x for x in (before, loud) if x)
     return (f"[{voice_input}]{voice},{_to_stereo(channels[0])}[voice];"
             f"[0:a:1]aresample={RATE},{_to_stereo(channels[1])}[system];"
             f"[voice][system]amix=inputs=2:normalize=0:duration=longest,{oversampled}[out]")
@@ -701,10 +745,9 @@ def mixdown(src: str | Path, dst: str | Path, progress: Callable[[str, float], N
     if not available():
         raise AudioError(_("ffmpeg is required for audio processing"))
     ch = track_channels(src) + [2, 2]
+    limiter = _limit_chain("alimiter=limit=0.977:attack=2:release=50:level=disabled")
     graph = (f"[0:a:0]aresample={RATE},{_to_stereo(ch[0])}[a];[0:a:1]aresample={RATE},{_to_stereo(ch[1])}[b];"
-             f"[a][b]amix=inputs=2:normalize=0:duration=longest,aresample={RATE * 4},"
-             f"alimiter=limit=0.977:attack=2:release=50:level=disabled,aresample={RATE},"
-             f"{_realign(LIMITER_DELAY)}[out]")
+             f"[a][b]amix=inputs=2:normalize=0:duration=longest,{limiter}[out]")
     graph = _append(graph, _container_delay(dst))
     _ffmpeg(["-i", str(src), "-map", "0:v?", "-filter_complex", graph, "-map", "[out]", "-c:v", "copy",
              "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
@@ -752,12 +795,14 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
     step("verify", 0.2)
     guard_denoise(a, voice, head, p)
     step("measure", 0.3)
-    measured = _loudnorm_pass(head + [voice], ",".join(s.filter for s in p.stages
-                                            if s.enabled and s.filter and s.name != "limiter"),
-                              p.target_lufs, p.target_tp)
+    voice_channels = track_channels(voice)[0]
+    measurement_chain = _voice_chain(p.stages)
+    if system:
+        measurement_chain += "," + _to_stereo(voice_channels)
+    measured = _loudnorm_pass(head + [voice], measurement_chain, p.target_lufs, p.target_tp)
     step("render", 0.4)
     second = [*head, "-i", voice] if voice != src else []
-    chain = render_chain(p, measured, system, tuple(channels[:2]) if system else (2, 2),
+    chain = render_chain(p, measured, system, (voice_channels, channels[1]) if system else (2, 2),
                          "1:a:0" if second else "0:a:0")
     chain = _append(chain, _container_delay(dst))
     audio_args = (["-filter_complex", chain, "-map", "[out]"] if system
@@ -773,4 +818,6 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
         "true_peak_dbtp": float(after["input_tp"]),
         "loudness_range_lu": float(after["input_lra"]),
         "system_sound": system,
+        "normalization_gain_db": normalization_gain(p, measured)[0],
+        "normalization_requires_limiter": normalization_gain(p, measured)[1],
     })

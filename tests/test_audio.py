@@ -193,3 +193,119 @@ def test_filter_delays_are_the_ones_compensated(noisy_voice, filt):
     name = filt.split("=")[0]
     lag = _lag_ms(run(filt.format(model=model)), run("anull"))
     assert round(lag * 48) == audio.FILTER_DELAYS[name]
+
+
+@needs_ffmpeg
+def test_normalization_preserves_dynamics_even_when_target_exceeds_headroom(tmp_path):
+    import numpy as np
+
+    t = np.arange(48000 * 12) / 48000
+    signal = np.sin(2 * np.pi * 1000 * t) * np.where(t < 6, 0.01, 0.15)
+    signal[48000:48010] = 0.8
+    src = tmp_path / 'dynamic.wav'
+    raw = tmp_path / 'dynamic.f32'
+    raw.write_bytes(signal.astype(np.float32).tobytes())
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'f32le', '-ar', '48000', '-ac', '1',
+                    '-i', str(raw), '-c:a', 'pcm_f32le', str(src)], check=True)
+    p = audio.Plan([], -14, -1)
+    measured = audio._loudnorm_pass([str(src)], '', p.target_lufs, p.target_tp)
+    gain, limited = audio.normalization_gain(p, measured)
+    assert limited
+    out = tmp_path / 'normalized.wav'
+    audio._ffmpeg(['-i', str(src), '-af', audio.render_chain(p, measured), '-c:a', 'pcm_f32le', str(out)])
+    decoded = _read(out)
+    # Every sample receives the same gain, including the quiet half and the transient.
+    np.testing.assert_allclose(decoded, signal * 10 ** (gain / 20), atol=2e-7)
+    assert gain == pytest.approx(-14 - float(measured["input_i"]))
+
+
+@needs_ffmpeg
+def test_denoise_guard_does_not_blame_upstream_attenuation(noisy_voice):
+    a = audio.analyze(noisy_voice)
+    p = audio.Plan([
+        audio.Stage('highpass', True, '', 'volume=-12dB'),
+        audio.Stage('denoise', True, '', 'afftdn=nr=0.01:nf=-80'),
+    ], -14, -1)
+    assert abs(audio.speech_loss(a, str(noisy_voice), [], p)) < 1
+
+
+@pytest.mark.parametrize('initial,losses', [
+    ('arnndn=m=test:mix=1.00', [20, 4]),
+    ('arnndn=m=test:mix=1.00', [5, 4, 4]),
+    ('afftdn=nr=10:nf=-50', [4]),
+])
+def test_denoise_guard_bypasses_when_even_fallback_damages_voice(monkeypatch, initial, losses):
+    trials = iter(losses)
+    monkeypatch.setattr(audio, 'speech_loss', lambda *args: next(trials))
+    stage = audio.Stage('denoise', True, '', initial)
+    p = audio.Plan([stage], -14, -1)
+    audio.guard_denoise(analysis(), 'unused', [], p)
+    assert not stage.enabled
+    assert list(trials) == []
+
+
+@needs_ffmpeg
+def test_denoising_preserves_the_tail_and_duration(noisy_voice, tmp_path):
+    p = audio.Plan([audio.Stage('denoise', True, '', 'afftdn=nr=0.01:nf=-80')], -14, -1)
+    out = tmp_path / 'aligned.wav'
+    audio._ffmpeg(['-i', str(noisy_voice), '-af', audio._voice_chain(p.stages),
+                   '-c:a', 'pcm_f32le', str(out)])
+    before, after = _read(noisy_voice), _read(out)
+    # FFT filters buffer the end; padding before the filter must retain those samples.
+    assert abs(len(before) - len(after)) <= 1
+    assert abs(_lag_ms(after, before)) <= 1 / 48
+
+
+@needs_ffmpeg
+def test_system_track_keeps_level_timing_and_duration(tmp_path):
+    import numpy as np
+
+    t = np.arange(48000 * 3) / 48000
+    system = 0.03 * np.sin(2 * np.pi * 997 * t) + 0.02 * np.sin(2 * np.pi * 2300 * t)
+    src, out = tmp_path / 'tracks.mkv', tmp_path / 'mixed.wav'
+    _two_tracks(src, np.zeros_like(system), system)
+    p = audio.Plan([audio.Stage('limiter', True, '',
+                    'alimiter=limit=0.84:attack=2:release=50:level=disabled')], -14, -1)
+    graph = audio.render_chain(p, {'input_i': '-14', 'input_tp': '-6'}, True, (1, 1))
+    audio._ffmpeg(['-i', str(src), '-filter_complex', graph, '-map', '[out]', '-c:a', 'pcm_f32le', str(out)])
+    # Read one channel: ffmpeg's default stereo-to-mono downmix can add 3 dB.
+    raw = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(out), '-af', 'pan=mono|c0=c0',
+                          '-f', 'f32le', '-'], capture_output=True, check=True).stdout
+    mixed = np.frombuffer(raw, np.float32)
+    assert len(mixed) == len(system)
+    np.testing.assert_allclose(mixed[100:-100], system[100:-100], atol=1e-5)
+
+
+@needs_ffmpeg
+def test_failed_denoise_trial_is_not_reported_as_voice_preserved(tmp_path):
+    with pytest.raises(audio.AudioError, match='denoise trial failed'):
+        audio._trial_levels(str(tmp_path / 'missing.wav'), [], 'anull')
+
+
+@needs_ffmpeg
+def test_pause_transitions_are_sample_continuous(tmp_path):
+    import numpy as np
+
+    # Rapid reversals interrupt both opening and closing ramps. A DC signal
+    # reveals gain discontinuities without confusing them with speech transients.
+    mask = [True] * 10 + [False] * 20 + [True] + [False] * 3 + [True] * 20
+    a = analysis(speech=mask)
+    commands = tmp_path / 'pauses.cmd'
+    commands.write_text(audio.pause_commands(a, 24))
+    stage = audio.Stage('pauses', True, '',
+                        f'asendcmd=f={audio._quote(str(commands))},'
+                        'afade@pauses=t=in:ns=1:silence=1:unity=1')
+    n = len(mask) * audio.FRAME
+    out = tmp_path / 'envelope.wav'
+    audio._ffmpeg(['-f', 'lavfi', '-i', 'aevalsrc=0.5:s=48000',
+                   '-af', audio._voice_chain([stage]), '-t', str(n / audio.RATE),
+                   '-c:a', 'pcm_f32le', str(out)])
+    envelope = _read(out) / 0.5
+    assert len(envelope) == n
+    assert max(abs(np.diff(envelope))) < 1 / (audio.VAD_ATTACK * audio.RATE) + 1e-6
+    assert envelope[25 * audio.FRAME] == pytest.approx(10 ** (-24 / 20), abs=1e-6)
+    assert envelope[-1] == pytest.approx(1, abs=1e-6)
+    # No step at any VAD boundary, and opening starts at the specified sample.
+    onset = 30 * audio.FRAME
+    assert envelope[onset] == pytest.approx(envelope[onset - 1], abs=1e-6)
+    assert envelope[onset + 1] > envelope[onset]
