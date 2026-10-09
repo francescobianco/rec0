@@ -202,15 +202,21 @@ def main(argv: list[str]) -> int:
     def on_press(_w, ev):
         if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
             click["press"] = (ev.x_root, ev.y_root, ev.time)
+            click["grab"] = (ev.x, ev.y)          # where the bubble was taken
             click["dragging"] = False
         return True
 
     def on_motion(_w, ev):
-        # Drag only once the pointer really moves: a still click can be a double click.
+        # The window manager does not move dock-type windows: the bubble follows the
+        # pointer itself. Only once it really moves: a still click can be a double click.
         p = click["press"]
-        if p and not click["dragging"] and abs(ev.x_root - p[0]) + abs(ev.y_root - p[1]) > 4:
+        if not p:
+            return True
+        if not click["dragging"] and abs(ev.x_root - p[0]) + abs(ev.y_root - p[1]) > 4:
             click["dragging"] = True
-            win.begin_move_drag(1, int(p[0]), int(p[1]), p[2])
+        if click["dragging"]:
+            gx, gy = click["grab"]
+            win.move(int(ev.x_root - gx), int(ev.y_root - gy))
         return True
 
     def on_release(_w, ev):
