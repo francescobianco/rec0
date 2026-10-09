@@ -139,6 +139,7 @@ class Window(Adw.ApplicationWindow):
         self.add_controller(drop)
 
         self.connect("close-request", self._on_close)
+        self._fitted = False
         # While recording, leaving rec0 shows the webcam bubble on screen.
         self.connect("notify::is-active", lambda *_: self._update_bubble())
         Gtk.RecentManager.get_default().connect("changed", lambda *_: self._fill_recent())
@@ -347,6 +348,11 @@ class Window(Adw.ApplicationWindow):
         self.level.set_visible(has_mic)
         self.level.set_value(0)
         self.stack.set_visible_child_name("main")
+        if not self._fitted:
+            # Once laid out, size the window so the preview has the video's exact
+            # aspect ratio: no black bands around it.
+            self._fitted = True
+            GLib.timeout_add(150, self._fit_to_preview)
         for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone"):
             self.lookup_action(name).set_enabled(True)
         self.lookup_action("camera").set_enabled(project.camera is not None)
@@ -383,6 +389,18 @@ class Window(Adw.ApplicationWindow):
         self.director.set_mode("auto" if auto else "camera")
         self._on_scene(self.director.scene, None)
         self._start_preview()
+
+    def _fit_to_preview(self):
+        if self.is_maximized() or self.is_fullscreen() or not self.frame.get_mapped():
+            return False
+        ratio = self.frame.get_ratio()
+        extra_w = self.get_width() - self.frame.get_width()
+        extra_h = self.get_height() - self.frame.get_height()
+        width = self.get_width()
+        height = extra_h + round((width - extra_w) / ratio)
+        if abs(height - self.get_height()) > 1:
+            self.set_default_size(width, height)
+        return False
 
     def _on_file_changed(self, _mon, _file, _other, event):
         if event == Gio.FileMonitorEvent.CHANGES_DONE_HINT and not self.recording:
