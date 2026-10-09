@@ -416,6 +416,7 @@ class Window(Adw.ApplicationWindow):
         self.mode_buttons["auto"].set_sensitive(auto)
         if auto:
             self.tracker = FocusTracker(self.director.focus_changed)
+            self.tracker.watch = self.director.watched   # presented windows are followed too
             self.tracker.start()
         elif project.windows:
             self.toast(_("Automatic scene switching is not available in this session"))

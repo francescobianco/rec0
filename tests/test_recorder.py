@@ -52,57 +52,97 @@ def test_record_with_scene_switch(tmp_path, fmt):
 
     assert not errors
     assert done == [out]
-    assert scenes == ["share", "camera"]
+    # on_scene also reports subject changes (window title): look at scene changes only
+    changes = [sc for i, sc in enumerate(scenes) if i == 0 or scenes[i - 1] != sc]
+    assert changes == ["share", "camera"]
     probe = subprocess.run(["gst-discoverer-1.0", str(out)], capture_output=True, text=True).stdout
     assert "H.264" in probe and "AAC" in probe
+
+
+def _session(tmp_path, **over):
+    data = {
+        "video": {"resolution": "640x360", "fps": 25, "transition": 0},
+        "camera": {"device": "test"},
+        "screen": {"monitor": "test"},
+        "windows": ["chrome", "terminal"],
+        "audio": {"microphone": False},
+        "privacy": {"block": ["mybank.example"]},
+        "output": {"directory": str(tmp_path)},
+    }
+    data.update(over)
+    p = parse(data)
+    caps = Captures(p, log=lambda m: None)
+    rec = Recorder(p, caps)
+    caps.prepare()
+    return p, rec, Director(rec)
+
+
+def _run(rec, p, steps, until=1800):
+    loop = GLib.MainLoop()
+    errors = []
+    rec.on_error = errors.append
+    rec.on_finished = lambda path: loop.quit()
+    for ms, fn in steps:
+        GLib.timeout_add(ms, lambda fn=fn: fn() and False)
+    GLib.timeout_add(until, lambda: rec.stop() and False)
+    GLib.timeout_add(15000, loop.quit)
+    loop.run()
+    return errors
 
 
 def test_privacy_holds_scene_and_delays_reveal(tmp_path):
     from rec0.recorder import SCREEN_DELAY
 
-    p = parse({
-        "video": {"resolution": "640x360", "fps": 25, "transition": 0},
-        "camera": {"device": "test"},
-        "screen": {"monitor": "test"},
-        "windows": ["chrome"],
-        "audio": {"microphone": False},
-        "privacy": {"block": ["mybank.example"]},
-        "output": {"directory": str(tmp_path)},
-    })
-    caps = Captures(p, log=lambda m: None)
-    rec = Recorder(p, caps)
-    caps.prepare()
-    d = Director(rec)
-    loop = GLib.MainLoop()
-    log, errors = [], []
-    rec.on_error = errors.append
-    rec.on_finished = lambda path: loop.quit()
+    p, rec, d = _session(tmp_path)
     rec.start(d.frame, p.output_path())
+    log = []
 
-    def win(title):
-        return FocusedWindow(1, title + " - Google Chrome", "google-chrome", Rect(0, 0, 800, 600))
+    def tab(title):
+        return FocusedWindow(1, title + " - Google Chrome", "google-chrome", Rect(0, 32, 800, 600))
 
-    def step(ms, fn):
-        GLib.timeout_add(ms, lambda: fn() and False)
-
-    # From close-up, a private tab never starts sharing.
-    step(300, lambda: d.focus_changed(win("Inbox - Gmail")))
-    step(400, lambda: log.append(("gmail", d.scene, rec.frozen, d.private.domain)))
-    # A shareable tab: sharing starts only after the delay.
-    step(500, lambda: d.focus_changed(win("Python docs")))
-    step(600, lambda: log.append(("docs-early", d.scene, rec.frozen)))
-    step(500 + int(SCREEN_DELAY * 1000) + 200, lambda: log.append(("docs", d.scene, rec.frozen)))
-    # Switching to a private tab while sharing freezes immediately, scene stays.
-    step(1400, lambda: d.focus_changed(win("Home - mybank.example")))
-    step(1450, lambda: log.append(("bank", d.scene, rec.frozen)))
-    step(1800, lambda: rec.stop() and False)
-    GLib.timeout_add(15000, loop.quit)
-    loop.run()
-
+    reveal = int(SCREEN_DELAY * 1000) + 200
+    errors = _run(rec, p, [
+        # From close-up, a private tab never starts sharing (nothing is captured).
+        (300, lambda: d.focus_changed(tab("Inbox - Gmail"))),
+        (400, lambda: log.append(("gmail", d.scene, sorted(d.windows), d.private.domain))),
+        # A shareable tab: the window joins frozen, and shows only after the delay.
+        (500, lambda: d.focus_changed(tab("Python docs"))),
+        (600, lambda: log.append(("docs-early", rec.frozen.get(1), 1 in d.revealed))),
+        (500 + reveal, lambda: log.append(("docs", d.scene, rec.frozen.get(1), 1 in d.revealed))),
+        # A private tab while sharing freezes that window at once; the scene stays.
+        (1400, lambda: d.focus_changed(tab("Home - mybank.example"))),
+        (1450, lambda: log.append(("bank", d.scene, rec.frozen.get(1)))),
+    ])
     assert not errors
     assert log == [
-        ("gmail", "camera", True, "gmail.com"),
-        ("docs-early", "camera", True),
-        ("docs", "share", False),
+        ("gmail", "camera", [], "gmail.com"),
+        ("docs-early", True, False),
+        ("docs", "share", False, True),
         ("bank", "share", True),
+    ]
+
+
+def test_presented_windows_stay_when_focus_moves_on(tmp_path):
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    t1 = FocusedWindow(11, "one - Terminal", "gnome-terminal", Rect(0, 40, 600, 400))
+    t2 = FocusedWindow(12, "two - Terminal", "gnome-terminal", Rect(700, 300, 600, 400))
+    other = FocusedWindow(13, "Notes", "notes", Rect(0, 0, 300, 300))
+    log = []
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(t1)),
+        (700, lambda: d.focus_changed(t2)),
+        (1300, lambda: log.append(("both", [k for k, l in d.frame.windows if l.alpha > 0]))),
+        # A window outside the project: close-up, but the presentation is remembered...
+        (1400, lambda: d.focus_changed(other)),
+        (1500, lambda: log.append(("camera", d.scene, list(d.windows)))),
+        # ...and t1 closed (the tracker reports it gone): it leaves the presentation.
+        (1600, lambda: d.focus_changed(t2, {11: None, 12: t2})),
+        (1700, lambda: log.append(("closed", list(d.windows), sorted(rec.sources)))),
+    ], until=2200)
+    assert not errors
+    assert log == [
+        ("both", [11, 12]),                  # t2 on top of t1, both visible
+        ("camera", "camera", [11, 12]),
+        ("closed", [12], [12]),
     ]

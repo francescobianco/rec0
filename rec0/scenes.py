@@ -19,15 +19,17 @@ def scene_label(scene: str) -> str:
 class Layer:
     rect: Rect
     alpha: float
-    crop: tuple[int, int, int, int] | None = None   # left, top, right, bottom (screen pixels)
-    edge: float = 0.0     # window frame width, in captured (screen) pixels; 0 = none
-    radius: float = 0.0   # corner radius of that frame, in captured pixels
+    # Window layers: videobox margins in captured pixels (positive crops the
+    # client-side shadows, negative adds transparent room for the frame).
+    crop: tuple[int, int, int, int] | None = None
+    edge: float = 0.0     # frame width around the window, captured pixels; 0 = none
+    radius: float = 0.0   # corner radius of the frame, captured pixels
 
 
 @dataclass(frozen=True)
 class Frame:
     camera: Layer | None
-    screen: Layer | None
+    windows: tuple[tuple[int, Layer], ...] = ()   # (key, layer), bottom to top
 
 
 FILL_STRETCH_MAX = 0.04   # aspect mismatch the work area may be stretched by
@@ -51,7 +53,7 @@ def screen_area(project: Project, area: Rect) -> tuple[float, float, float, floa
 
 
 def to_canvas(project: Project, area: Rect, rect: Rect) -> Rect:
-    """Map an absolute screen rectangle onto the canvas, as the screen layer draws it."""
+    """Map an absolute screen rectangle onto the canvas."""
     sx, sy, ox, oy = screen_area(project, area)
     return Rect(round(ox + (rect.x - area.x) * sx), round(oy + (rect.y - area.y) * sy),
                 max(1, round(rect.width * sx)), max(1, round(rect.height * sy)))
@@ -65,62 +67,68 @@ def bubble_rect(bubble: Bubble, area: Rect) -> Rect:
     return Rect(area.x + x, area.y + y, d, d)
 
 
-def window_layer(project: Project, monitor: Rect, window: Rect | None, fullscreen: bool = False,
-                 area: Rect | None = None) -> Layer:
-    """The window, cropped out of the monitor capture, where it is on the real screen.
+def window_layer(project: Project, area: Rect, content: Rect,
+                 shadow: tuple[int, int, int, int] = (0, 0, 0, 0), fullscreen: bool = False) -> Layer | None:
+    """Layer for a window captured on its own, at its real place on the virtual desktop.
 
-    Windows get a frame with rounded corners drawn just outside them (the crop is
-    widened to make room); fullscreen and maximized ones fill the video bare.
+    `content` is the visible window in screen coordinates and `shadow` the
+    client-side shadows around it in the capture. Windows get a frame with
+    rounded corners just outside them; fullscreen and maximized ones fill bare.
     """
-    area = area or monitor
     sx, sy, ox, oy = screen_area(project, area)
-    if window is None:
-        window = area
-    decorated = not fullscreen and window != area
-    # Room for the frame outside the window, in captured pixels.
-    pad = WINDOW_EDGE / min(sx, sy) if decorated else 0.0
+    pad = 0.0 if fullscreen else WINDOW_EDGE / min(sx, sy)
     grow = int(pad + 0.999)
-    # Clip to the usable area (and so to the captured monitor).
-    x1 = max(window.x - grow, area.x, monitor.x)
-    y1 = max(window.y - grow, area.y, monitor.y)
-    x2 = min(window.x + window.width + grow, area.x + area.width, monitor.x + monitor.width)
-    y2 = min(window.y + window.height + grow, area.y + area.height, monitor.y + monitor.height)
+    box = Rect(content.x - grow, content.y - grow, content.width + 2 * grow, content.height + 2 * grow)
+    x1, y1 = max(box.x, area.x), max(box.y, area.y)
+    x2, y2 = min(box.x + box.width, area.x + area.width), min(box.y + box.height, area.y + area.height)
     if x2 - x1 < 2 or y2 - y1 < 2:
-        x1, y1, x2, y2 = area.x, area.y, area.x + area.width, area.y + area.height
-        decorated, pad = False, 0.0
-    crop = (x1 - monitor.x, y1 - monitor.y, monitor.x + monitor.width - x2, monitor.y + monitor.height - y2)
+        return None   # entirely off the usable area
+    gl, gt, gr, gb = shadow
+    crop = (gl - grow + (x1 - box.x), gt - grow + (y1 - box.y),
+            gr - grow + (box.x + box.width - x2), gb - grow + (box.y + box.height - y2))
     rect = Rect(round(ox + (x1 - area.x) * sx), round(oy + (y1 - area.y) * sy),
                 max(1, round((x2 - x1) * sx)), max(1, round((y2 - y1) * sy)))
-    radius = WINDOW_RADIUS / min(sx, sy) if decorated else 0.0
+    radius = 0.0 if fullscreen else WINDOW_RADIUS / min(sx, sy)
     return Layer(rect, 1.0, crop, pad, radius)
 
 
-def compose(project: Project, scene: str, monitor: Rect | None, window: Rect | None,
-            previous: Frame | None = None, bubble: Rect | None = None, fullscreen: bool = False,
-            area: Rect | None = None) -> Frame:
-    """`bubble` is the absolute rect of the on-screen bubble, when shown: in the share
-    scene the webcam overlay sits exactly on top of it, so it never appears twice."""
+@dataclass(frozen=True)
+class Shown:
+    """A window in the presentation, as the scene composer needs it."""
+    key: int
+    content: Rect
+    shadow: tuple[int, int, int, int] = (0, 0, 0, 0)
+    fullscreen: bool = False
+    visible: bool = True     # revealed (past the privacy delay) and not minimized
+
+
+def compose(project: Project, scene: str, area: Rect | None, windows: list[Shown],
+            previous: Frame | None = None, bubble: Rect | None = None) -> Frame:
+    """The frame for `scene`. Windows are bottom to top; in the camera scene they fade
+    out where they are. `bubble` is the on-screen bubble's absolute rect, when shown:
+    the webcam overlay then sits exactly on top of it, so it never appears twice."""
     cam = project.camera
-    camera = screen = None
-    area = area or monitor
+    camera = None
     if cam:
         if scene == "camera":
             camera = Layer(cam.closeup.rect, cam.closeup.alpha)
-        elif cam.overlay and bubble and monitor:
+        elif cam.overlay and bubble and area:
             camera = Layer(to_canvas(project, area, bubble), cam.overlay.alpha)
         elif cam.overlay:
             camera = Layer(cam.overlay.rect, cam.overlay.alpha)
         else:
             camera = Layer(cam.closeup.rect, 0.0)
-    if monitor is not None:
-        if scene == "share":
-            screen = window_layer(project, monitor, window, fullscreen, area)
-        elif previous and previous.screen:
-            # Fade out in place rather than jumping somewhere else.
-            screen = replace(previous.screen, alpha=0.0)
-        else:
-            screen = replace(window_layer(project, monitor, None, area=area), alpha=0.0)
-    return Frame(camera, screen)
+    layers = []
+    before = dict(previous.windows) if previous else {}
+    if area is not None:
+        for w in windows:
+            layer = window_layer(project, area, w.content, w.shadow, w.fullscreen)
+            if layer is None:
+                continue
+            if scene != "share" or not w.visible:
+                layer = replace(before.get(w.key, layer), alpha=0.0)
+            layers.append((w.key, layer))
+    return Frame(camera, tuple(layers))
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -128,17 +136,19 @@ def _lerp(a: float, b: float, t: float) -> float:
 
 
 def interpolate(a: Frame, b: Frame, t: float) -> Frame:
-    """Blend two frames. Crop is not interpolated: the target crop applies immediately."""
+    """Blend two frames. Crops are not interpolated: the target ones apply at once."""
     t = 1 - (1 - t) ** 3   # ease-out cubic
 
     def layer(la: Layer | None, lb: Layer | None) -> Layer | None:
         if la is None or lb is None:
             return lb
-        # A window that was invisible should appear in its final place, not slide in.
+        # A layer that was invisible appears in its final place, it does not slide in.
         ra = lb.rect if la.alpha == 0 else la.rect
         rect = Rect(*(round(_lerp(p, q, t)) for p, q in zip(
             (ra.x, ra.y, ra.width, ra.height), (lb.rect.x, lb.rect.y, lb.rect.width, lb.rect.height))))
         keep = lb if lb.alpha > 0 else la
         return Layer(rect, _lerp(la.alpha, lb.alpha, t), keep.crop, keep.edge, keep.radius)
 
-    return Frame(layer(a.camera, b.camera), layer(a.screen, b.screen))
+    before = dict(a.windows)
+    windows = tuple((k, layer(before.get(k, replace(lb, alpha=0.0)), lb)) for k, lb in b.windows)
+    return Frame(layer(a.camera, b.camera), windows)

@@ -89,6 +89,7 @@ class Screen:
     monitor: str = "primary"         # "primary", index, connector name, or "test"
     margin: int = 0                  # border of virtual desktop around the real screen
     cursor: bool = True
+    frame: str = "accent"            # frame around shared windows: accent, #rrggbb or none
 
 
 @dataclass
@@ -215,7 +216,10 @@ def parse(data, path: Path | None = None) -> Project:
         monitor=str(raw_screen.get("monitor", "primary")),
         margin=_int(raw_screen.get("margin", 0), "screen.margin", errors, minimum=0),
         cursor=bool(raw_screen.get("cursor", True)),
+        frame="none" if raw_screen.get("frame", "accent") in (False, None) else str(raw_screen.get("frame", "accent")),
     )
+    if screen.frame not in ("accent", "none") and _color(screen.frame) is None:
+        errors.append(_("{where}: must be 'accent', a color (#RRGGBB) or false").format(where="screen.frame"))
     if screen.margin * 2 >= min(width, height):
         errors.append(_("screen.margin: too large for the resolution"))
 
@@ -524,6 +528,7 @@ camera:
 screen:
   monitor: primary
   margin: 0                  # virtual desktop border around the real screen (0: corners match)
+  frame: accent              # frame around shared windows: accent (theme colour), #RRGGBB or false
 
 windows:
   - match: Firefox

@@ -446,6 +446,19 @@ class Captures:
         caps = pick_camera_caps(self.camera.caps, self.project.fps, cam.capture_size or want)
         return f"v4l2src device={q(self.camera.id)} do-timestamp=true" + (f" ! {caps}" if caps else " ! decodebin")
 
+    def window_source(self, win) -> str | None:
+        """gst-launch source capturing one window (X11: its own pixels, even when covered)."""
+        if self.project.screen.monitor == "test":
+            # Synthetic stand-in of the window's full size (shadows included).
+            gl, gt, gr, gb = win.shadow
+            c = win.area
+            return (f"videotestsrc is-live=true pattern={'ball' if win.xid % 2 else 'smpte'} "
+                    f"! video/x-raw,width={c.width + gl + gr},height={c.height + gt + gb},framerate={self.project.fps}/1")
+        if self.backend != "x11":
+            return None
+        cursor = "true" if self.project.screen.cursor else "false"
+        return f"ximagesrc xid={win.xid} use-damage=false show-pointer={cursor}"
+
     def screen_source(self) -> str | None:
         if self.monitor is None:
             return None
@@ -467,6 +480,41 @@ class Captures:
             self.portal.close()
             self.portal = None
         self.prepared = False
+
+
+# Accent colours: GNOME 47+ (org.gnome.desktop.interface accent-color) and Ubuntu's
+# Yaru theme variants (the accent is part of the theme name).
+GNOME_ACCENTS = {"blue": "#3584e4", "teal": "#2190a4", "green": "#3a944a", "yellow": "#c88800",
+                 "orange": "#ed5b00", "red": "#e62d42", "pink": "#d56199", "purple": "#9141ac",
+                 "slate": "#6f8396"}
+YARU_ACCENTS = {"": "#e95420", "bark": "#787859", "sage": "#657b69", "olive": "#4b8501",
+                "viridian": "#03875b", "prussiangreen": "#308280", "blue": "#0073e5",
+                "purple": "#7764d8", "magenta": "#b34cb3", "red": "#da3450"}
+
+
+def accent_color() -> str:
+    """The desktop's accent colour as #rrggbb (GNOME blue if unknown)."""
+    source = Gio.SettingsSchemaSource.get_default()
+    schema = source.lookup("org.gnome.desktop.interface", True) if source else None
+    if schema is None:
+        return GNOME_ACCENTS["blue"]
+    s = Gio.Settings.new("org.gnome.desktop.interface")
+    if schema.has_key("accent-color"):
+        return GNOME_ACCENTS.get(s.get_string("accent-color"), GNOME_ACCENTS["blue"])
+    theme = s.get_string("gtk-theme")
+    if theme.startswith("Yaru"):
+        variant = theme[4:].removeprefix("-").removesuffix("dark").removesuffix("light").strip("-")
+        return YARU_ACCENTS.get(variant, YARU_ACCENTS[""])
+    return GNOME_ACCENTS["blue"]
+
+
+def frame_rgb(spec: str) -> tuple[float, float, float] | None:
+    """Colour of the frame around shared windows: 'accent', '#rrggbb' or 'none'."""
+    if spec in ("none", "false", ""):
+        return None
+    hex_ = accent_color() if spec == "accent" else spec
+    v = int(hex_.lstrip("#")[-6:], 16)
+    return ((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255
 
 
 def background_description(project: Project) -> str:

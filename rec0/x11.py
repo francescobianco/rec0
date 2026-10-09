@@ -20,8 +20,15 @@ class FocusedWindow:
     xid: int
     title: str
     wm_class: str
-    rect: Rect
+    rect: Rect                 # what the window looks like on screen (title bar included)
     fullscreen: bool = False   # fullscreen, or maximized both ways
+    content: Rect | None = None                 # what a capture of the window shows (no shadows)
+    shadow: tuple[int, int, int, int] = (0, 0, 0, 0)   # client-side shadows to crop: l, t, r, b
+    hidden: bool = False       # minimized
+
+    @property
+    def area(self) -> Rect:
+        return self.content or self.rect
 
 
 @dataclass
@@ -208,7 +215,13 @@ class X11:
         ids = self._cardinals(self.root, "_NET_ACTIVE_WINDOW")
         if not ids or not ids[0]:
             return None
-        wid = ids[0]
+        return self.window_info(ids[0])
+
+    def window_info(self, wid: int) -> FocusedWindow | None:
+        """Geometry, title and state of any top-level window; None if it is gone."""
+        if not self._dpy:
+            return None
+        _errors.pop(self._dpy, None)
         attrs = XWindowAttributes()
         if not self._x.XGetWindowAttributes(self._dpy, wid, byref(attrs)):
             return None
@@ -222,6 +235,7 @@ class X11:
         state = set(self._cardinals(wid, "_NET_WM_STATE"))
         fullscreen = self.atom("_NET_WM_STATE_FULLSCREEN") in state or {
             self.atom("_NET_WM_STATE_MAXIMIZED_VERT"), self.atom("_NET_WM_STATE_MAXIMIZED_HORZ")} <= state
+        hidden = self.atom("_NET_WM_STATE_HIDDEN") in state
         frame = self._cardinals(wid, "_NET_FRAME_EXTENTS")
         gtk = self._cardinals(wid, "_GTK_FRAME_EXTENTS")
         if self._dpy in _errors:     # the window went away while we were reading it
@@ -231,10 +245,10 @@ class X11:
         fl, fr, ft, fb = frame if len(frame) == 4 else (0, 0, 0, 0)
         # ...client-side shadows do not.
         gl, gr, gt, gb = gtk if len(gtk) == 4 else (0, 0, 0, 0)
-        x, y = x - fl + gl, y - ft + gt
-        w, h = w + fl + fr - gl - gr, h + ft + fb - gt - gb
-        return FocusedWindow(xid=wid, title=title, wm_class=wm_class, rect=Rect(x, y, w, h),
-                             fullscreen=fullscreen)
+        content = Rect(x + gl, y + gt, w - gl - gr, h - gt - gb)
+        rect = Rect(x - fl + gl, y - ft + gt, w + fl + fr - gl - gr, h + ft + fb - gt - gb)
+        return FocusedWindow(xid=wid, title=title, wm_class=wm_class, rect=rect, fullscreen=fullscreen,
+                             content=content, shadow=(gl, gt, gr, gb), hidden=hidden)
 
     def client_windows(self) -> list[X11Window]:
         if not self._dpy:
@@ -291,12 +305,12 @@ _default: X11 | None = None
 _default_lock = threading.Lock()
 
 
-def _shared(fn):
+def _shared(fn, *args):
     global _default
     with _default_lock:
         if _default is None or not _default.ok:
             _default = X11()
-        return fn(_default)
+        return fn(_default, *args)
 
 
 def active_window() -> FocusedWindow | None:
@@ -309,6 +323,10 @@ def client_windows() -> list[X11Window]:
 
 def monitors() -> list[dict]:
     return _shared(X11.monitors)
+
+
+def window_info(wid: int) -> FocusedWindow | None:
+    return _shared(X11.window_info, wid)
 
 
 def workarea() -> Rect | None:

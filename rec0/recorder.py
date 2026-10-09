@@ -29,22 +29,22 @@ import cairo  # noqa: E402
 from .bubble import draw_ring  # noqa: E402
 from .i18n import _  # noqa: E402
 
-from .capture import Captures, background_description, find_microphone, q  # noqa: E402
+from .capture import Captures, background_description, find_microphone, frame_rgb, q  # noqa: E402
 from .focus import FocusedWindow  # noqa: E402
 from .project import Project  # noqa: E402
 from .project import Rect  # noqa: E402
-from .scenes import Frame, compose, interpolate  # noqa: E402
+from .scenes import Frame, Shown, compose, interpolate, window_layer  # noqa: E402
 
 Gst.init(None)
 
 PREVIEW_WIDTH = 1280            # preview frames (RGB) go through Python: big enough to look sharp
 PREVIEW_FPS = 30
-SCREEN_PAD, CAMERA_PAD = "sink_1", "sink_2"
+CAMERA_PAD = "sink_1"
+CAMERA_Z = 1000                 # above every window layer
 # Screen frames are held back this long before reaching the compositor, so that
 # when focus moves to a private page the screen layer is frozen before any of
 # its frames can be composed (focus is polled every 100 ms).
 SCREEN_DELAY = 0.4
-WINDOW_EDGE_RGB = (0.13, 0.13, 0.14)   # frame around shared windows: dark gray
 BUBBLE_FPS = 20
 
 
@@ -95,14 +95,19 @@ class Recorder:
         self.frame: Frame | None = None
         self._stopping = False
         self._bus_watch = None
-        self._crop = None
         self._camcrop = None
         self._camcrop_aspect = None
         self._mix = None
         self._playing = False
         self._mask_size = (0, 0)
         self.circle = False              # draw the webcam as a circle (share overlay)
-        self.frozen = True               # screen layer stops updating (privacy)
+        # Window layers: key -> gst-launch source, kept across pipelines (preview -> record).
+        self.sources: dict[int, str] = {}
+        self.frozen: dict[int, bool] = {}   # per window: stop updating (privacy)
+        self._branches: dict[int, dict] = {}
+        self._crops: dict[int, tuple] = {}
+        self.on_window_lost: Callable | None = None   # (key) a window's capture failed
+        self.frame_rgb = frame_rgb(project.screen.frame)   # frame around windows; None = no frame
         self.on_bubble_frame: Callable | None = None   # (bgra, w, h) from a streaming thread
         self.on_preview: Callable | None = None
         self.on_level: Callable | None = None
@@ -121,28 +126,12 @@ class Recorder:
         parts = [f"{background_description(p)} ! queue ! mix.sink_0"]
         norm = f"videorate ! video/x-raw,framerate={fps}/1,pixel-aspect-ratio=1/1"
 
-        screen = self.captures.screen_source()
-        if screen and frame.screen:
-            crop = frame.screen.crop or (0, 0, 0, 0)
-            pads.append(f"{SCREEN_PAD}::zorder=1 " + _pad_props(SCREEN_PAD, frame.screen, "stretch"))
-            parts.append(
-                f"{screen} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! video/x-raw,format=I420 "
-                f"! queue max-size-buffers=0 max-size-bytes=0 max-size-time=0 "
-                f"min-threshold-time={int(SCREEN_DELAY * Gst.SECOND)} "
-                f"! valve name=screenvalve drop={'true' if self.frozen else 'false'} "
-                f"! videocrop name=screencrop left={crop[0]} top={crop[1]} right={crop[2]} bottom={crop[3]} "
-                # Rounded frame around the window (see _on_screen_draw).
-                f"! videoconvert ! video/x-raw,format=BGRA ! cairooverlay name=screenmask "
-                # Repeats the last frame while the valve is closed (frozen screen).
-                f"! videoscale ! imagefreeze name=screenfreeze is-live=true allow-replace=true "
-                f"! {norm} ! mix.{SCREEN_PAD}")
-
         camera = self.captures.camera_source((cam.closeup.rect.width, cam.closeup.rect.height)) if cam else None
         if camera and frame.camera:
             pl = cam.closeup if frame.camera.rect == cam.closeup.rect or not cam.overlay else cam.overlay
             self._camcrop_aspect = self._aspect(pl)
             self.circle = pl.circle
-            pads.append(f"{CAMERA_PAD}::zorder=2 " + _pad_props(CAMERA_PAD, frame.camera, pl.fit))
+            pads.append(f"{CAMERA_PAD}::zorder={CAMERA_Z} " + _pad_props(CAMERA_PAD, frame.camera, pl.fit))
             parts.append(
                 # No scaling before the tee: caps are negotiated across both branches,
                 # and the small bubble branch would drag the video branch down with it.
@@ -164,7 +153,7 @@ class Recorder:
 
         parts.insert(0,
             f"compositor name=mix background=black ignore-inactive-pads=true "
-            f"latency={int((SCREEN_DELAY + 0.1) * Gst.SECOND) if screen else 0} {' '.join(pads)} "
+            f"latency={int((SCREEN_DELAY + 0.1) * Gst.SECOND) if p.windows else 0} {' '.join(pads)} "
             f"! video/x-raw,format=AYUV,width={p.width},height={p.height},framerate={fps}/1 ! tee name=vt")
 
         if preview:
@@ -231,14 +220,25 @@ class Recorder:
         self.frame = frame
         if not self.pipeline:
             return
-        if frame.screen and self._mix.get_static_pad(SCREEN_PAD):
-            self._set_pad(SCREEN_PAD, frame.screen)
-            # Changing the crop while the source is still negotiating fails with
-            # not-negotiated: wait for PLAYING (see _on_message).
-            if frame.screen.crop and self._crop and self._playing:
-                for name, value in zip(("left", "top", "right", "bottom"), frame.screen.crop):
-                    if self._crop.get_property(name) != value:
-                        self._crop.set_property(name, value)
+        layers = dict(frame.windows)
+        order = {k: i for i, (k, _l) in enumerate(frame.windows)}
+        for key, b in self._branches.items():
+            layer = layers.get(key)
+            pad = b["pad"]
+            if layer is None:
+                pad.set_property("alpha", 0.0)
+                continue
+            r = layer.rect
+            for prop, value in (("xpos", r.x), ("ypos", r.y), ("width", r.width), ("height", r.height),
+                                ("alpha", layer.alpha), ("zorder", 10 + order[key])):
+                pad.set_property(prop, value)
+            b["edge"], b["radius"] = layer.edge, layer.radius
+            # Changing the margins while the branch negotiates fails (not-negotiated):
+            # only once it has produced a frame.
+            if layer.crop and b["size"] != (0, 0):
+                for name, value in zip(("left", "top", "right", "bottom"), layer.crop):
+                    if b["box"].get_property(name) != value:
+                        b["box"].set_property(name, value)
         if frame.camera and self._mix.get_static_pad(CAMERA_PAD):
             pad = self._set_pad(CAMERA_PAD, frame.camera)
             if placement is not None:
@@ -249,12 +249,87 @@ class Recorder:
                     Gst.util_set_object_arg(self._camcrop, "aspect-ratio", aspect)
                     self._camcrop_aspect = aspect
 
-    def set_screen_frozen(self, frozen: bool):
-        """Freeze the screen layer on its last frame (the valve drops new ones)."""
-        self.frozen = frozen
-        valve = self.pipeline.get_by_name("screenvalve") if self.pipeline else None
-        if valve is not None:
-            valve.set_property("drop", frozen)
+    # ---- window layers ----------------------------------------------------
+
+    def add_window(self, key: int, source: str, crop: tuple[int, int, int, int] | None = None):
+        """Register a window capture; it starts frozen (see set_window_frozen)."""
+        self.sources[key] = source
+        if crop:
+            self._crops[key] = crop
+        self.frozen.setdefault(key, True)
+        if self.pipeline and key not in self._branches:
+            self._add_branch(key)
+
+    def remove_window(self, key: int):
+        self.sources.pop(key, None)
+        self._crops.pop(key, None)
+        self.frozen.pop(key, None)
+        self._remove_branch(key)
+
+    def set_window_frozen(self, key: int, frozen: bool):
+        """Freeze a window layer on its last frame (the valve drops new ones)."""
+        self.frozen[key] = frozen
+        b = self._branches.get(key)
+        if b:
+            b["valve"].set_property("drop", frozen)
+
+    def _add_branch(self, key: int):
+        fps = self.project.fps
+        crop = next((l.crop for k, l in (self.frame.windows if self.frame else ()) if k == key), None) \
+            or self._crops.get(key) or (0, 0, 0, 0)
+        desc = (
+            f"{self.sources[key]} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! video/x-raw,format=I420 "
+            # Held back SCREEN_DELAY: privacy decisions apply before frames are composed.
+            f"! queue max-size-buffers=0 max-size-bytes=0 max-size-time=0 "
+            f"min-threshold-time={int(SCREEN_DELAY * Gst.SECOND)} "
+            f"! valve name=valve drop={'true' if self.frozen.get(key, True) else 'false'} "
+            f"! videoconvert ! video/x-raw,format=BGRA "
+            # Crops client-side shadows, adds transparent room for the frame.
+            f"! videobox name=box border-alpha=0 left={crop[0]} top={crop[1]} right={crop[2]} bottom={crop[3]} "
+            f"! cairooverlay name=mask "
+            # Repeats the last frame while the valve is closed (frozen window).
+            f"! videoscale ! imagefreeze name=freeze is-live=true allow-replace=true "
+            # Explicit capsfilter: a bare caps string at the end of a bin is read as an element.
+            f'! videorate ! capsfilter caps="video/x-raw,framerate={fps}/1,pixel-aspect-ratio=1/1"')
+        try:
+            bin_ = Gst.parse_bin_from_description(desc, True)
+        except GLib.Error as e:
+            self._emit(self.on_error, e.message)
+            return
+        bin_.set_name(f"win{key}")
+        self.pipeline.add(bin_)
+        pad = self._mix.request_pad_simple("sink_%u")
+        pad.set_property("alpha", 0.0)
+        pad.set_property("sizing-policy", 0)
+        bin_.get_static_pad("src").link(pad)
+        b = {"bin": bin_, "pad": pad, "box": bin_.get_by_name("box"), "valve": bin_.get_by_name("valve"),
+             "freeze": bin_.get_by_name("freeze"), "size": (0, 0), "edge": 0.0, "radius": 0.0}
+        mask = bin_.get_by_name("mask")
+        mask.connect("caps-changed", self._on_window_caps, b)
+        mask.connect("draw", self._on_window_draw, b)
+        self._branches[key] = b
+        bin_.sync_state_with_parent()
+
+    def _remove_branch(self, key: int):
+        b = self._branches.pop(key, None)
+        if not b or not self.pipeline:
+            return
+        src = b["bin"].get_static_pad("src")
+        peer = src.get_peer()
+        if peer:
+            src.unlink(peer)
+            self._mix.release_request_pad(peer)
+        b["bin"].set_state(Gst.State.NULL)
+        self.pipeline.remove(b["bin"])
+
+    def _window_of(self, obj) -> int | None:
+        """Key of the window branch an element belongs to, if any."""
+        while obj is not None:
+            name = obj.get_name() if hasattr(obj, "get_name") else ""
+            if name.startswith("win") and name[3:].isdigit() and int(name[3:]) in self._branches:
+                return int(name[3:])
+            obj = obj.get_parent()
+        return None
 
     def _set_pad(self, name, layer):
         pad = self._mix.get_static_pad(name)
@@ -283,8 +358,10 @@ class Recorder:
         self._stopping = False
         self._playing = False
         self._mix = self.pipeline.get_by_name("mix")
-        self._crop = self.pipeline.get_by_name("screencrop")
         self._camcrop = self.pipeline.get_by_name("camcrop")
+        self._branches = {}
+        for key in list(self.sources):
+            self._add_branch(key)
 
         appsink = self.pipeline.get_by_name("preview")
         if appsink is not None:
@@ -292,10 +369,6 @@ class Recorder:
         bubblesink = self.pipeline.get_by_name("bubblesink")
         if bubblesink is not None:
             bubblesink.connect("new-sample", self._on_bubble_sample)
-        smask = self.pipeline.get_by_name("screenmask")
-        if smask is not None:
-            smask.connect("caps-changed", self._on_screen_caps)
-            smask.connect("draw", self._on_screen_draw)
         mask = self.pipeline.get_by_name("cammask")
         if mask is not None:
             mask.connect("caps-changed", self._on_mask_caps)
@@ -320,10 +393,9 @@ class Recorder:
             freeze = self.pipeline.get_by_name("bgfreeze")
             if freeze is not None:
                 freeze.get_static_pad("src").push_event(Gst.Event.new_eos())
-            # A closed valve drops EOS too: end the screen branch past it.
-            screenfreeze = self.pipeline.get_by_name("screenfreeze")
-            if screenfreeze is not None:
-                screenfreeze.get_static_pad("src").push_event(Gst.Event.new_eos())
+            # Window branches end at their imagefreeze too (and a closed valve drops EOS).
+            for b in self._branches.values():
+                b["freeze"].get_static_pad("src").push_event(Gst.Event.new_eos())
             # Safety net: never hang forever if a source ignores EOS.
             GLib.timeout_add_seconds(10, self._force_stop)
         else:
@@ -356,7 +428,8 @@ class Recorder:
             self._bus_watch = None
         self.pipeline.set_state(Gst.State.NULL)
         self.pipeline = None
-        self._mix = self._crop = self._camcrop = None
+        self._mix = self._camcrop = None
+        self._branches = {}
         self.recording = False
 
     def _pop_error(self) -> str | None:
@@ -375,6 +448,11 @@ class Recorder:
                 self._playing = True
                 if self.frame:
                     self.apply(self.frame)
+        elif t == Gst.MessageType.ERROR and self._window_of(msg.src) is not None:
+            # A window closed or was minimized: drop its layer, keep recording.
+            key = self._window_of(msg.src)
+            self._remove_branch(key)
+            self._emit(self.on_window_lost, key)
         elif t == Gst.MessageType.ERROR:
             err, _dbg = msg.parse_error()
             name = msg.src.get_name() if msg.src else "?"
@@ -436,17 +514,17 @@ class Recorder:
         s = caps.get_structure(0)
         self._mask_size = (s.get_value("width"), s.get_value("height"))
 
-    def _on_screen_caps(self, _overlay, caps):
-        s = caps.get_structure(0)
-        self._screen_size = (s.get_value("width"), s.get_value("height"))
+    @staticmethod
+    def _on_window_caps(_overlay, caps, b):
+        st = caps.get_structure(0)
+        b["size"] = (st.get_value("width"), st.get_value("height"))
 
-    def _on_screen_draw(self, _overlay, cr, _ts, _dur):
-        """Rounded frame around a shared window: outside the window, inside the crop."""
-        layer = self.frame.screen if self.frame else None
-        w, h = getattr(self, "_screen_size", (0, 0))
-        if not layer or layer.edge <= 0 or not w:
+    def _on_window_draw(self, _overlay, cr, _ts, _dur, b):
+        """Rounded frame around a window, in the transparent room videobox added."""
+        w, h = b["size"]
+        e, r = b["edge"], max(b["radius"], b["edge"])
+        if e <= 0 or not w:
             return
-        e, r = layer.edge, max(layer.radius, layer.edge)
 
         def rounded(x, y, rw, rh, rad):
             cr.new_sub_path()
@@ -456,15 +534,17 @@ class Recorder:
             cr.arc(x + rad, y + rad, rad, math.pi, 3 * math.pi / 2)
             cr.close_path()
 
-        # Transparent outside the rounded outline...
+        # Transparent outside the rounded outline (the window's own corners included)...
         cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
         cr.set_operator(cairo.OPERATOR_CLEAR)
         cr.rectangle(0, 0, w, h)
         rounded(0, 0, w, h, r)
         cr.fill()
-        # ...and an opaque ring of `e` pixels between it and the window.
+        if self.frame_rgb is None:
+            return    # rounded corners only, no visible frame
+        # ...and an opaque ring between the outline and the window.
         cr.set_operator(cairo.OPERATOR_SOURCE)
-        cr.set_source_rgb(*WINDOW_EDGE_RGB)
+        cr.set_source_rgb(*self.frame_rgb)
         rounded(0, 0, w, h, r)
         rounded(e, e, w - 2 * e, h - 2 * e, max(1.0, r - e))
         cr.fill()
@@ -496,42 +576,70 @@ class Recorder:
 
 
 class Director:
-    """Decides the scene and animates the layers between scenes.
+    """Decides what the video shows and animates the changes.
 
     mode "auto" follows window focus; "camera" / "share" force a scene.
     on_scene(scene, detail|None) is called when the scene or its subject changes.
 
-    Privacy: a project window showing a private page (see privacy.py) never
-    starts the share scene; if sharing is already on, the screen layer freezes
-    on its last frame. Hiding is immediate, while showing new screen content
-    waits SCREEN_DELAY so frames captured before the switch are discarded.
+    Windows that have been shared stay in the presentation, at their real place,
+    until they are closed: focusing a second terminal does not hide the first,
+    it only brings the second on top. Each window is captured on its own.
+
+    Privacy: a window showing a private page (see privacy.py) freezes on its
+    last frame and never starts sharing. Showing new content waits SCREEN_DELAY,
+    so frames captured before a change are discarded; hiding is immediate.
     """
+
+    SCREEN_KEY = 0   # the whole usable area, when windows cannot be captured one by one
 
     def __init__(self, recorder: Recorder, on_scene: Callable | None = None):
         self.recorder = recorder
         self.project = recorder.project
+        self.captures = recorder.captures
         self.on_scene = on_scene
         self.mode = "auto"
-        self.window: FocusedWindow | None = None    # project window shown in the share scene
         self.focused: FocusedWindow | None = None   # currently focused window, any
         self.bubble: Rect | None = None             # on-screen bubble, when shown
         self.private = None                         # privacy rule holding the scene, if any
-        # Start on the camera scene: with no camera it is an empty virtual desktop,
-        # never an unintended view of the screen.
+        self.windows: dict[int, FocusedWindow] = {} # presented windows, bottom to top
+        self.revealed: set[int] = set()             # past the privacy delay
+        self.watched: set[int] = set()              # shared with the focus tracker
         self.scene = "camera"
         self._anim = None
-        self._reveal = None
-        self.frame = self._target(self.scene)
+        self._reveals: dict[int, int] = {}
+        self._last_note = None
+        self.frame = self._target()
+        recorder.on_window_lost = self._lost
 
     @property
-    def monitor(self):
-        return self.recorder.captures.monitor
+    def per_window(self) -> bool:
+        """X11 (and test) capture windows one by one; otherwise the whole area is shown."""
+        return self.captures.backend == "x11" or self.project.screen.monitor == "test"
 
-    def _target(self, scene: str) -> Frame:
-        shown = self.window if (scene == "share" and self.window) else None
-        return compose(self.project, scene, self.monitor, shown.rect if shown else None,
-                       previous=getattr(self, "frame", None), bubble=self.bubble,
-                       fullscreen=bool(shown and shown.fullscreen), area=self.recorder.captures.area)
+    @property
+    def area(self) -> Rect | None:
+        return self.captures.area or self.captures.monitor
+
+    # ---- composition ------------------------------------------------------
+
+    def _shown(self) -> list[Shown]:
+        out = []
+        for key, w in self.windows.items():
+            if key == self.SCREEN_KEY:
+                out.append(Shown(key, self.area, fullscreen=True, visible=key in self.revealed))
+            else:
+                out.append(Shown(key, w.area, w.shadow, w.fullscreen, key in self.revealed and not w.hidden))
+        return out
+
+    def _target(self) -> Frame:
+        return compose(self.project, self.scene, self.area, self._shown(),
+                       previous=getattr(self, "frame", None), bubble=self.bubble)
+
+    def detail(self) -> str | None:
+        if self.private:
+            return _("paused, {domain} is private").format(domain=self.private.domain)
+        top = self.focused if self.focused and self.focused.xid in self.windows else None
+        return top.title if self.scene == "share" and top else None
 
     def _placement(self, scene: str):
         cam = self.project.camera
@@ -539,99 +647,147 @@ class Director:
             return None
         return cam.overlay if scene == "share" and cam.overlay else cam.closeup
 
-    def detail(self) -> str | None:
-        if self.private:
-            return _("paused, {domain} is private").format(domain=self.private.domain)
-        return self.window.title if self.scene == "share" and self.window else None
+    # ---- inputs -----------------------------------------------------------
 
-    def focus_changed(self, win: FocusedWindow | None):
+    def focus_changed(self, win: FocusedWindow | None, watched: dict | None = None):
+        """From the focus tracker: the active window, and the presented ones."""
+        for key, info in (watched or {}).items():
+            if key not in self.windows:
+                continue
+            if info is None:
+                self._forget(key)
+            else:
+                self.windows[key] = info
         self.focused = win
-        project_window = win is not None and self.project.match_window(win.title, win.wm_class) is not None
+        project_window = (win is not None and not win.hidden
+                          and self.project.match_window(win.title, win.wm_class) is not None)
         rule = self.project.private(win.title) if win is not None else None
+        if win is not None and win.xid in self.windows:
+            self.windows[win.xid] = win
+            if rule is not None:
+                self._freeze(win.xid)        # this window only; the others keep playing
+            elif win.xid not in self.revealed:
+                self._reveal_later(win.xid)
         if self.mode == "camera" or (self.mode == "auto" and not project_window):
             self._set_private(None)
             self._go("camera")
-        elif rule is not None:
-            self._hold(rule)
-        elif self.mode == "share" and not project_window:
-            self._set_private(None)
-            self._go("share", reveal=self.recorder.frozen)
-        else:
-            new = self.window is None or (win.xid, win.title) != (self.window.xid, self.window.title)
-            self.window = win
-            self._set_private(None)
-            self._go("share", reveal=new or self.recorder.frozen or self.scene != "share")
+            return
+        if rule is not None:
+            self._set_private(rule)          # hold the scene as it is
+            self._update()
+            return
+        self._set_private(None)
+        if project_window:
+            self._present(win)
+        elif self.mode == "share" and not self.per_window:
+            self._present(None)
+        self._go("share")
 
     def set_bubble(self, rect: Rect | None):
         """The webcam overlay follows the on-screen bubble (None: configured position)."""
         if rect != self.bubble:
             self.bubble = rect
-            if self._reveal is None:
-                self._go(self.scene)
+            self._update()
 
     def set_mode(self, mode: str):
         self.mode = mode
-        if mode == "auto" or self.focused is not None:
-            self.focus_changed(self.focused)
+        if mode == "share" and not self.per_window:
+            self._present(None)
+        self.focus_changed(self.focused)
+
+    # ---- presentation -----------------------------------------------------
+
+    def _present(self, win: FocusedWindow | None):
+        """Bring a window into the presentation (or on top of it)."""
+        if self.area is None:
+            return
+        if not self.per_window or win is None:
+            key, source = self.SCREEN_KEY, self.captures.screen_source()
+            info = win or FocusedWindow(0, "", "", self.area, True, self.area)
         else:
-            self._go(mode, reveal=mode == "share")
+            key, source, info = win.xid, self.captures.window_source(win), win
+        if source is None:
+            return
+        if key not in self.windows:
+            layer = (window_layer(self.project, self.area, info.area, info.shadow, info.fullscreen)
+                     if key != self.SCREEN_KEY else None)
+            self.recorder.add_window(key, source, layer.crop if layer else None)
+            self._reveal_later(key)
+        self.windows.pop(key, None)
+        self.windows[key] = info          # last = on top
+        self.watched.add(key)
+
+    def _forget(self, key: int):
+        self.windows.pop(key, None)
+        self.revealed.discard(key)
+        self.watched.discard(key)
+        src = self._reveals.pop(key, None)
+        if src:
+            GLib.source_remove(src)
+        self.recorder.remove_window(key)
+
+    def _lost(self, key: int):
+        # Capture failed (window closed or minimized): it can come back when focused again.
+        self._forget(key)
+        self._update()
+
+    def _freeze(self, key: int):
+        src = self._reveals.pop(key, None)
+        if src:
+            GLib.source_remove(src)
+        self.recorder.set_window_frozen(key, True)
+
+    def _reveal_later(self, key: int):
+        """Unfreeze after SCREEN_DELAY: frames captured before now never show."""
+        if key in self._reveals:
+            return
+        self.recorder.set_window_frozen(key, True)
+
+        def reveal():
+            self._reveals.pop(key, None)
+            if key in self.windows:
+                self.recorder.set_window_frozen(key, False)
+                self.revealed.add(key)
+                self._update(animate=True)
+            return False
+
+        self._reveals[key] = GLib.timeout_add(int(SCREEN_DELAY * 1000) + 50, reveal)
+
+    # ---- scene ------------------------------------------------------------
 
     def _set_private(self, rule):
         if rule != self.private:
             self.private = rule
             self._notify()
 
-    def _hold(self, rule):
-        """Keep the current scene; never show what is on screen now."""
-        self._cancel_reveal()
-        self.recorder.set_screen_frozen(True)
-        self._set_private(rule)
-
-    def _cancel_reveal(self):
-        if self._reveal:
-            GLib.source_remove(self._reveal)
-            self._reveal = None
-
-    def _go(self, scene: str, reveal: bool = False):
-        if self.monitor is None and scene == "share":
-            return
-        self._cancel_reveal()
-        if scene == "share" and reveal:
-            self.recorder.set_screen_frozen(True)
-
-            def show():
-                self._reveal = None
-                self.recorder.set_screen_frozen(False)
-                self._switch(scene)
-                return False
-
-            self._reveal = GLib.timeout_add(int(SCREEN_DELAY * 1000) + 50, show)
-            return
-        self._switch(scene)
-
-    def _switch(self, scene: str):
-        target = self._target(scene)
+    def _go(self, scene: str):
+        if scene == "share" and (self.area is None or not self.windows):
+            scene = "camera" if self.scene == "camera" else self.scene
         changed = scene != self.scene
         self.scene = scene
-        if changed:
-            self._animate(target, self._placement(scene))
-            self._notify()
+        self._update(animate=changed, placement=self._placement(scene) if changed else None)
+
+    def _update(self, animate: bool = False, placement=None):
+        target = self._target()
+        if animate:
+            self._animate(target, placement)
+        elif self._anim is None:
+            self.frame = target
+            self.recorder.apply(target)
         else:
-            if target != self.frame and self._anim is None:
-                # Same scene, window moved/resized or another tab: follow it immediately.
-                self.frame = target
-                self.recorder.apply(target)
-            self._notify()
+            self._anim_target = target   # picked up by the running animation
+        self._notify()
 
     def _notify(self):
         note = (self.scene, self.detail())
-        if self.on_scene and note != getattr(self, "_last_note", None):
+        if self.on_scene and note != self._last_note:
             self._last_note = note
             self.on_scene(*note)
 
     def _animate(self, target: Frame, placement):
         start, t0 = self.frame, time.monotonic()
         duration = max(0.0, self.project.transition)
+        self._anim_target = target
         if self._anim:
             GLib.source_remove(self._anim)
             self._anim = None
@@ -639,7 +795,8 @@ class Director:
 
         def step():
             t = 1.0 if duration == 0 else min(1.0, (time.monotonic() - t0) / duration)
-            self.frame = interpolate(start, target, t) if t < 1 else target
+            goal = self._anim_target
+            self.frame = interpolate(start, goal, t) if t < 1 else goal
             self.recorder.apply(self.frame)
             if t >= 1:
                 self._anim = None

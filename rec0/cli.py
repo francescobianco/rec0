@@ -164,6 +164,8 @@ def cmd_record(args) -> int:
     result = {"code": 0}
     bubble = None
     tracker = FocusTracker(director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
+    if tracker:
+        tracker.watch = director.watched
     if args.scene != "auto":
         director.set_mode(args.scene)
     elif not captures.follows_focus and project.windows:
@@ -227,7 +229,7 @@ def cmd_record(args) -> int:
         from .project import Rect
         from .scenes import bubble_rect
 
-        r = bubble_rect(cam.bubble, captures.area)
+        r = bubble_rect(cam.bubble, captures.area or captures.monitor)
         bubble = Bubble(r.width, r.x, r.y,
                         on_move=lambda x, y, size: director.set_bubble(Rect(x, y, size, size)))
         rec.on_bubble_frame = bubble.frame
