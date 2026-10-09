@@ -51,6 +51,7 @@ FILTER_DELAYS = {
     "afftdn": 1200,           # spectral denoise: 25 ms of analysis window
 }
 LIMITER_DELAY = 96            # samples: alimiter's 2 ms attack is a lookahead
+ECHO_ONLY_DB = 0.0            # cleaned microphone below the echo removed there: the speaker is silent
 AAC_DELAY = 1024              # samples: the AAC encoder's priming; MP4 skips it (edit list), Matroska does not
 FRAME = 1024                  # analysis frame, samples (21.3 ms at 48 kHz)
 WINDOW = FRAME / RATE         # ...in seconds
@@ -372,8 +373,9 @@ BANDS = {
 }
 
 
-def analyze(path: str | Path, limit: float | None = None) -> Analysis:
-    """Measure the audio of `path` (only the first `limit` seconds, if given)."""
+def analyze(path: str | Path, limit: float | None = None, echo_only: list[bool] | None = None) -> Analysis:
+    """Measure the audio of `path` (only the first `limit` seconds, if given).
+    `echo_only` marks frames that held nothing but the speakers' echo: never speech."""
     path = str(path)
     duration = probe_duration(path)
     head = ["-t", str(limit)] if limit else []
@@ -391,6 +393,8 @@ def analyze(path: str | Path, limit: float | None = None) -> Analysis:
     if not audible:
         return a
     a.speech = vad(feats)
+    if echo_only:
+        a.speech = [sp and not (i < len(echo_only) and echo_only[i]) for i, sp in enumerate(a.speech)]
     speech = [v for v, sp in zip(levels, a.speech) if sp and v > SILENCE_DB]
     other = sorted(v for v, sp in zip(levels, a.speech) if not sp and v > SILENCE_DB)
     a.active_ratio = len(speech) / len(audible)
@@ -723,14 +727,19 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
     tmp = tempfile.TemporaryDirectory(prefix="rec0-audio-")
     # With system sound on its own track, its echo is removed from the microphone
     # first (speakers instead of headphones): the clean voice feeds every pass.
-    voice = src
+    voice, echo_only = src, None
     if system and echo.available():
         step("echo", 0.0)
         clean = str(Path(tmp.name) / "voice.wav")
-        if echo.cancel(src, clean):
+        ratios = echo.cancel(src, clean, FRAME)
+        if ratios is not None:
             voice = clean
+            # What the speakers play is often speech too: where the microphone held only
+            # their echo, voice activity detection would take it for the speaker, and the
+            # leveler would raise it. Those frames are pauses.
+            echo_only = [r < ECHO_ONLY_DB for r in ratios]
     step("analyze", 0.0)
-    a = analyze(voice, limit)
+    a = analyze(voice, limit, echo_only)
     head = ["-t", str(limit)] if limit else []
     if not a.has_audio or a.active_ratio == 0:
         raise AudioError(_("the recording has no usable audio"))
