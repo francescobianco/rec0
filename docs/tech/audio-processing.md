@@ -14,8 +14,12 @@
 > been confirmed by listening, and several parameters are still hand-tuned on
 > two recordings. The subsequent circuit audit (§16) fixes hidden dynamic
 > normalisation, misaligned denoise checks and pause timing; its renders still
-> need listening approval. Read this document as the record of an ongoing
-> investigation, not as the description of a finished feature.
+> need listening approval. The real experiment of the evening (§19, a podcast
+> as a constant-level voice, speech and music from the PC) shows that the
+> canceller removes only 5-7 dB of the microphone's total energy and that the
+> voice is gated more than a quarter of the time while the PC plays. Read this
+> document as the record of an ongoing investigation, not as the description
+> of a finished feature.
 
 This dossier collects everything about how rec0 handles audio: the capture,
 the echo canceller, the analysis, the adaptive "circuits", the rendering, how
@@ -43,6 +47,7 @@ Contents:
 16. [Circuit audit and corrections](#16-circuit-audit-and-corrections)
 17. [Measurement and listening protocol](#17-measurement-and-listening-protocol)
 18. [Improvement strategy](#18-improvement-strategy)
+19. [Real experiment: a podcast as the voice](#19-real-experiment-a-podcast-as-the-voice)
 
 ---
 
@@ -54,8 +59,8 @@ What "good" means for rec0, in the author's words and as requirements:
 |---|---|---|
 | E1 | A first-time creator with a cheap microphone in a noisy room gets clean, even voice at YouTube loudness (-14 LUFS, -1 dBTP) without touching anything | reached on voice-only recordings (synthetic and real); **not** when system sound plays through speakers |
 | E2 | What plays on the computer while recording is in the video **as heard live**, "as if overlaid" | the system sound track is laid over untouched (verified to 0.03 dB); but see E3 and E5 |
-| E3 | No echo or "room" effect on the system sound when speakers are used instead of headphones | much improved (from the room copy 18 dB **above** the clean sound to 21 dB **below** it), residue still audible according to the author |
-| E4 | Stable processing: the voice must not change character from one moment to the next | **not reached**: reported on `dev-20261009-165346`; mitigated, not confirmed |
+| E3 | No echo or "room" effect on the system sound when speakers are used instead of headphones | much improved (from the room copy 18 dB **above** the clean sound to 21 dB **below** it), residue still audible according to the author; the canceller removes only **5-7 dB of the microphone's total energy** on real recordings ([§19](#19-real-experiment-a-podcast-as-the-voice)) |
+| E4 | Stable processing: the voice must not change character from one moment to the next | **not reached**: measured on `dev-20261009-190333`: while the PC plays, the voice is lowered by more than 6 dB in 27% of 100 ms windows, with 88 gate transitions in 43 s ([§19](#19-real-experiment-a-podcast-as-the-voice)) |
 | E5 | The balance between voice and system sound resembles what was heard in the room | **not addressed**: the voice is normalised to -14 LUFS while system sound keeps its own level (open design question, [§13](#13-open-problems)) |
 | E6 | The voice stays in sync with the picture and with the system sound | reached: from +27 ms to -0.15 ms on a real recording |
 | E7 | Never lose a recording | reached: the original is renamed first and restored on any failure |
@@ -465,7 +470,7 @@ to raise (B9).
 
 | # | Problem | Notes |
 |---|---|---|
-| P1 | **Quality not confirmed by listening** after `71ae9ab` | the author's last verdict predates it |
+| P1 | **Quality not confirmed by listening** after `71ae9ab` | the author's last verdict predates it; a listening set for `190333` is ready in `~/Videos/rec0/dev/listen-190333/` |
 | P2 | **Residue beyond the linear model**: reverberant tail > 85 ms, speaker non-linearity | stage 2 is gentle on purpose; a stronger post-filter costs voice |
 | P3 | **Hand-tuned constants**: `BLOCK`, `TAIL`, `OVER`, `FLOOR`, `ECHO_ONLY_DB`, VAD thresholds | chosen on two recordings; they should be derived from each recording ([§14](#14-proposed-next-steps)) |
 | P4 | **Denoise quality with speakers** | checks now align samples and isolate denoising; fallback and reduced mixes are verified. Large RNNoise loss persists on `165346`; reduced RNNoise passes on `183203`. VAD and spectral preservation remain open |
@@ -476,6 +481,8 @@ to raise (B9).
 | P9 | **Double talk**: while the speaker talks over the video, the estimate's variance grows (the voice is noise for the estimator) | longer blocks help but follow the drift worse |
 | P10 | Flaky test (B10) | — |
 | P11 | GStreamer MP4s carry the AAC priming without an edit list | the effect on audio/video sync of the *original* files was not measured |
+| P12 | **The linear echo model explains only 5-7 dB of the microphone** (2 dB on stereo music) | neither more taps, longer blocks, drift warping nor a stereo reference change it ([§19](#19-real-experiment-a-podcast-as-the-voice)); the cause is not identified |
+| P13 | **The echo-only mask has nothing to work with when the voice is as loud as the echo** | the per-frame ratio sits at 0 dB with a podcast playing over PC speech; every threshold rule gives the same statistics as on a (presumed) silent-speaker recording; gating 24 dB on it is the pumping of P1/E4 |
 
 ## 14. Proposed next steps
 
@@ -605,6 +612,15 @@ Regression coverage now includes:
 - Existing encoded-output loudness, true peak, synthetic echo removal,
   synchronisation and original-restoration checks.
 
+**Pause fades, verified on `dev-20261009-185025`** (the recording where the
+click was found): around 23.744 s the largest jump between two samples went
+from 0.289 (render with the stepped envelope) to 0.101 with the signal's
+100 ms envelope at 0.32-0.35, so it is no longer a discontinuity relative to
+the signal. The largest remaining jump of that file (22.978 s, 0.162 with an
+envelope of 0.019) is in the **system track itself** at the same instant and
+with the same size (0.161): it is something the computer played, carried
+faithfully. `build-aux/audio-lab/clicks.py` lists such jumps.
+
 The PCM system-track test isolates processing errors from AAC loss. It does
 not establish transparency when the summed voice and system sound drive the
 limiter. The existing synthetic echo case uses shaped noise and a fixed room
@@ -723,3 +739,141 @@ Not implemented by this audit: acoustic calibration, a replacement AEC,
 self-tuned echo masks, limiter-envelope telemetry, a new leveler, balance
 policy, or AEC on the processing-off path. Those remain proposals whose
 benefit must be demonstrated under the protocol above.
+
+## 19. Real experiment: a podcast as the voice
+
+Evening of 2026-10-09, after commit `58aa34d`. Recording
+`dev-20261009-190333` (69.5 s, X11, Blue USB microphone, laptop speakers at
+96%/88%), made through the running GUI with `build-aux/audio-lab/experiment.sh`.
+
+**Setup.** A podcast playing on a phone next to the microphone is the
+"voice": a real voice at a **constant level** (-34…-38 dBFS at the
+microphone), so any level change of the processed voice is processing, not
+the speaker. The PC played: nothing 0-11 s; **YouTube speech** (the system
+track of `165346`, -25.7 LUFS) 12-30 s; nothing 31-34 s; **music**
+(`Joystock - Here For You`, -15.8 LUFS, played at 50%) 35-60 s; nothing
+61-69 s. The GUI processed it with the code loaded at 18:50; the original was
+reprocessed with `58aa34d`. Listening set (microphone alone, untouched mix,
+echo-cancelled mix, both renders, report JSON, timeline) in
+`~/Videos/rec0/dev/listen-190333/`. **Not yet listened to.**
+
+**Plan chosen** (`58aa34d`): high-pass 100 Hz; preamp +9.9 dB (voice at
+-34 dBFS); RNNoise backed off to 64% (loss 2.9 dB); pauses 24 dB; compressor
+2:1 (LRA 4 LU); constant gain +9.8 dB, limiter required. Output -14.2 LUFS,
+-1.4 dBTP, LRA 4.3 LU.
+
+### What was measured (`build-aux/audio-lab/evaluate.py`)
+
+Since the system track is laid over untouched, **output − system track = the
+processed voice** (plus echo residue and limiter action), and it can be
+compared with the echo-cancelled microphone.
+
+| Measure | Result |
+|---|---|
+| System track in the output | lag 0.000 ms, gain -0.12 dB (E2, E6 fine) |
+| Microphone while the PC plays speech | -27…-33 dB, **the same level as the system track**: the speakers' echo at the microphone is as loud as the podcast; 50-80% of the microphone's energy is linearly explained by the system track |
+| Voice gain, system silent (100 ms windows) | median +16.0 dB, p10 +8.6, lowered by >6 dB in 9.9% of windows, 21 gate transitions |
+| Voice gain, system playing | median +13.3 dB, **p10 -7.2**, lowered by >6 dB in **27.5%** of windows (>12 dB: 17.1%), **88 gate transitions in 43 s** (code of 18:50: 33.7%, 116) |
+| Discontinuities in the processed voice | none above the signal envelope (largest ratio 5.0 at 40.4 s, 0.015 on an envelope of 0.003: a pause gate opening on noise) |
+
+The voice "better and worse by turns" (B9, E4) is this: while the PC plays,
+the voice drops by more than 6 dB more than a quarter of the time, in short
+stretches.
+
+### Why: the echo-only mask has no information at this level
+
+The per-frame ratio (cleaned microphone over removed echo, `ECHO_ONLY_DB`):
+
+| Section | p5 | p25 | median | p75 | p95 | frames < 0 dB |
+|---|---|---|---|---|---|---|
+| podcast alone (1-11 s) | +74 | +79 | +84 | +88 | +93 | 0% |
+| podcast + PC speech (13-30 s) | -17.8 | -9.1 | **-1.7** | +9.3 | +24.3 | **56%** |
+| podcast + music (36-60 s) | -10.2 | -4.3 | **+0.1** | +6.0 | +12.7 | **50%** |
+
+With a voice as loud as the echo the ratio is centred on 0 dB by
+construction, and the threshold is a coin flip per frame. Rules compared
+(raw frame ratio, energies smoothed over 5 and 9 frames, thresholds 0 and
+-3 dB, a per-2 s-block floor at the 10th percentile plus 3 or 6 dB) give the
+**same fraction of "echo-only" frames on `185025` 8-28 s (presumed silent
+speaker) and on the podcast over PC speech** (55.5% vs 55.7%, 63.0 vs 61.9,
+53.5 vs 48.6, 22.6 vs 23.7, …). Either `185025` is not a silent-speaker
+recording (its microphone is at -24…-30 dB in 1-6 s with the system silent)
+or the ratio does not separate the cases. In both readings, **a different
+threshold will not fix the gating**; what would is removing more echo, so
+that the residue sits well under the voice.
+
+### The canceller removes 5-7 dB, whatever its parameters
+
+Honest metric: total energy of the cleaned microphone against the microphone
+(the podcast is uncorrelated with the reference, so a linear model can only
+remove echo; overfitting costs < 0.5 dB with 2 s blocks).
+`build-aux/audio-lab/aec_variants.py` and `stereo_ref.py`:
+
+| Variant | `185025` 8-28 s (YouTube) | `190333` 13-30 s (PC speech) | `190333` 36-60 s (music) |
+|---|---:|---:|---:|
+| current (16 taps, 2 s blocks) | -6.5 dB | -7.2 dB | -2.2 dB |
+| 32 taps | -7.2 | -8.0 | -2.8 |
+| 4 s blocks | -6.3 | -7.1 | -1.9 |
+| 32 taps, 4 s blocks | -6.8 | -7.6 | -2.2 |
+| reference warped by the measured drift, 16 taps | -6.5 | -7.2 | -2.2 |
+| warped, 32 taps, 4 s | -6.8 | -7.7 | -2.2 |
+| warped, 32 taps, 8 s | -6.5 | -7.4 | -1.9 |
+| stereo reference (L and R separately), 16 taps each | -5.1* | -5.7* | -1.9* |
+| stereo reference, 24 taps each | -5.5* | -6.3* | -2.1* |
+
+\* the stereo script measures on a single span without chunk crossfades; its
+mono baseline is -5.1 / -5.7 / -1.3 dB, so the stereo gain is 0 / 0 / 0.6 dB.
+
+Facts around it:
+
+- **Clock drift is small here**: +6.8 / -3.4 / +15.4 ppm (the +80.9 ppm of
+  §11 was measured on `161737`). Warping the reference changes nothing.
+- **Stereo content is not the limit** for speech (L−R is 72 dB under L+R)
+  and only part of it for music (L−R at -9.3 dB).
+- **The lag of the microphone against the system track alternates** between
+  ~4.6 and ~6.0 ms from one second to the next on `190333` (once 2.65 ms),
+  identically against the left and the right channel, so it is not the two
+  speakers. On `185025` it is 15.2-15.5 ms with one block at 16.5 ms. The
+  normalised correlation peak is only 0.3-0.6 with speech, 0.1-0.2 with music.
+- **The room response estimated over 4 s** (400 ms FIR, Wiener in the
+  frequency domain at 16 kHz): direct path at 3.4 ms, only 46% of the energy
+  within the first 20 ms, 85% within 300 ms, and a **flat plateau at
+  -17…-20 dB for 300 ms** instead of a room decay. That is the signature of a
+  **time-varying delay or of a component the reference does not predict**,
+  not of a long reverberant tail.
+
+### Hypotheses to test next (in this order)
+
+1. **Time-varying delay between the monitor capture and the speakers.** The
+   monitor of the sink and the DAC may not run sample-locked (PipeWire
+   quantum scheduling, resampler state). Test: a loud broadband signal
+   through the speakers with nobody talking (and the phone off), lag measured
+   every 100 ms with sub-sample precision. If the lag jumps by ~1.4 ms, a
+   block least-squares filter can only average over the jumps; the fix is
+   to track the delay per block (or per frame) before estimating the room,
+   or to capture the reference elsewhere.
+2. **What the microphone hears is not what the monitor records**: a filter
+   chain or equaliser on the sink, the per-channel volume (96%/88%,
+   balance -0.08: a linear gain, harmless by itself), or loudspeaker
+   distortion. Test: the same calibration signal, coherence per band between
+   microphone and monitor; the achievable linear cancellation (ERLE) is the
+   coherent fraction.
+3. Only after 1-2: a residual-echo post-filter guided by the measured ERLE,
+   and the confidence-aware pause depth of §18.3 (limit the depth while the
+   system plays instead of gating 24 dB on a coin flip).
+
+The calibration signal of §14.3 ("Calibrate speakers") is the tool for 1 and
+2, and it needs the speaker to be silent: it must be done with the phone
+podcast off.
+
+### Reproducing
+
+```bash
+# Record (GUI running with `make start`), play speech then music from the PC
+build-aux/audio-lab/experiment.sh /tmp/exp speech.wav music.wav
+# Reprocess the original with the current code and evaluate it
+rec0 process ~/Videos/rec0/dev/NAME.original.mp4 -o /tmp/NAME.new.mp4
+python3 build-aux/audio-lab/evaluate.py ~/Videos/rec0/dev/NAME.original.mp4 /tmp/NAME.new.mp4
+# Canceller variants
+python3 build-aux/audio-lab/aec_variants.py; python3 build-aux/audio-lab/stereo_ref.py
+```
