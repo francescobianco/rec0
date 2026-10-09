@@ -702,7 +702,7 @@ class Director:
         self.focused = win
         project_window = (win is not None and not win.hidden
                           and self.project.match_window(win.title, win.wm_class) is not None)
-        rule = self.project.private(win.title) if win is not None else None
+        rule = self.project.private(win.title, win.wm_class) if win is not None else None
         if win is not None and win.xid in self.windows:
             self.windows[win.xid] = win
             if rule is not None:

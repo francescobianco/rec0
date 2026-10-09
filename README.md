@@ -28,8 +28,11 @@ copre esattamente, così la tua faccia non compare due volte.
 
 Le finestre non elencate nel progetto non compaiono mai nel video. In più rec0 ha una
 **privacy list** di siti che non vengono registrati nemmeno dentro una finestra
-condivisa: posta (gmail.com, outlook, libero…), chat (WhatsApp, Telegram, Slack…),
-password manager, PayPal e banche online. Se una tab privata va in focus:
+condivisa: posta (gmail.com, outlook, libero…), chat web (WhatsApp Web, Telegram, Google
+Chat, Messenger, Instagram, LinkedIn, Slack, Discord, Teams…), password manager, PayPal e
+banche online. Anche le **app desktop** di messaggistica, posta e password (Teams, Skype,
+Slack, Discord, Telegram, Signal, WhatsApp, Zoom, Thunderbird, Evolution, KeePassXC…)
+sono riconosciute dalla classe della finestra, qualunque cosa mostrino. Se una tab privata va in focus:
 
 - da primo piano, la scena **non passa** in condivisione finché non torni su una tab
   condivisibile;
@@ -46,7 +49,7 @@ nel progetto:
 
 ```yaml
 privacy:
-  allow: [app.slack.com]            # toglie voci dalla lista predefinita
+  allow: [app.slack.com, zoom]      # toglie voci dalla lista predefinita (siti o app)
   block:                            # aggiunge le tue
     - miabanca.example
     - {domain: intranet.example, titles: ["Intranet"]}

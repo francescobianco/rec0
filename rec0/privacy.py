@@ -13,12 +13,24 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Rule:
-    domain: str
+    domain: str                                    # site, or app name for desktop apps
     titles: tuple[str, ...] = field(default_factory=tuple)
+    classes: tuple[str, ...] = ()                  # desktop apps: window classes (WM_CLASS)
 
-    def matches(self, title: str) -> bool:
+    def matches(self, title: str, wm_class: str = "") -> bool:
+        if self.classes:
+            # Whole class names (or their prefix: "thunderbird_thunderbird"), never a
+            # substring: "wire" must not catch Wireshark.
+            names = wm_class.casefold().split()
+            return any(n == c or n.startswith((c + "_", c + "-", c + ".")) or (" " in c and c in wm_class.casefold())
+                       for c in (x.casefold() for x in self.classes) for n in names)
         t = title.casefold()
         return self.domain.casefold() in t or any(k.casefold() in t for k in self.titles)
+
+
+def app(name: str, *classes: str) -> Rule:
+    """A desktop application recognised by its window class, whatever it shows."""
+    return Rule(name, (), classes)
 
 
 BUILTIN: tuple[Rule, ...] = (
@@ -32,14 +44,62 @@ BUILTIN: tuple[Rule, ...] = (
     Rule("webmail.aruba.it", ("Webmail Aruba",)),
     Rule("icloud.com", ("iCloud Mail",)),
     Rule("fastmail.com", ("Fastmail",)),
-    # Chat
+    # Chat and messaging
     Rule("web.whatsapp.com", ("WhatsApp",)),
     Rule("web.telegram.org", ("Telegram",)),
     Rule("messenger.com", ("Messenger",)),
+    Rule("facebook.com/messages", ("Chats | Facebook", "Messenger | Facebook")),
+    Rule("instagram.com/direct", ("Instagram • Chats", "Inbox • Direct", "• Direct")),
     Rule("app.slack.com", ("Slack",)),
     Rule("discord.com", ("Discord",)),
     Rule("teams.microsoft.com", ("Microsoft Teams",)),
     Rule("signal.org", ("Signal",)),
+    Rule("chat.google.com", ("Google Chat",)),
+    Rule("messages.google.com", ("Google Messages", "Messages for web")),
+    Rule("linkedin.com/messaging", ("Messaging | LinkedIn",)),
+    Rule("x.com/messages", ("Messages / X", "Direct Messages")),
+    Rule("web.skype.com", ("Skype",)),
+    Rule("app.element.io", ("Element",)),
+    Rule("web.wechat.com", ("WeChat",)),
+    Rule("line.me", ("LINE",)),
+    Rule("web.threema.ch", ("Threema Web",)),
+    Rule("app.wire.com", ("Wire",)),
+    Rule("chat.reddit.com", ("Reddit Chat",)),
+    Rule("web.snapchat.com", ("Snapchat",)),
+    Rule("viber.com", ("Viber",)),
+    Rule("mattermost.com", ("Mattermost",)),
+    Rule("rocket.chat", ("Rocket.Chat",)),
+    Rule("zulipchat.com", ("Zulip",)),
+    # Desktop messaging apps (any window of theirs, whatever the title)
+    app("teams", "teams-for-linux", "microsoft teams", "msteams"),
+    app("skype", "skypeforlinux", "skype"),
+    app("slack", "slack"),
+    app("discord", "discord", "vesktop", "webcord"),
+    app("telegram", "telegramdesktop", "telegram-desktop", "org.telegram.desktop"),
+    app("signal", "signal", "signal desktop"),
+    app("whatsapp", "whatsapp-for-linux", "whatsapp", "zapzap", "whatsie", "wasistlos"),
+    app("element", "element"),
+    app("zoom", "zoom"),
+    app("viber", "viber"),
+    app("wire", "wire"),
+    app("mattermost", "mattermost"),
+    app("rocketchat", "rocket.chat"),
+    app("zulip", "zulip"),
+    app("caprine", "caprine"),
+    app("ferdium", "ferdium", "franz", "rambox", "station"),
+    app("fractal", "org.gnome.fractal", "fractal"),
+    app("polari", "org.gnome.polari"),
+    # Desktop mail clients
+    app("thunderbird", "thunderbird", "mail"),
+    app("evolution", "evolution", "org.gnome.evolution"),
+    app("geary", "geary", "org.gnome.geary"),
+    app("mailspring", "mailspring"),
+    app("betterbird", "betterbird"),
+    # Password managers
+    app("keepassxc", "keepassxc", "org.keepassxc.keepassxc"),
+    app("bitwarden", "bitwarden"),
+    app("1password", "1password"),
+    app("seahorse", "seahorse", "org.gnome.seahorse.application"),
     # Passwords and money
     Rule("passwords.google.com", ("Google Password Manager", "Gestore delle password")),
     Rule("vault.bitwarden.com", ("Bitwarden",)),
@@ -59,6 +119,6 @@ def build(allow: list[str], block: list[Rule]) -> tuple[Rule, ...]:
     return tuple(rules + block)
 
 
-def check(rules: tuple[Rule, ...], title: str) -> Rule | None:
-    """The rule a window title falls under, or None if it can be recorded."""
-    return next((r for r in rules if r.matches(title)), None)
+def check(rules: tuple[Rule, ...], title: str, wm_class: str = "") -> Rule | None:
+    """The rule a window falls under, or None if it can be recorded."""
+    return next((r for r in rules if r.matches(title, wm_class)), None)

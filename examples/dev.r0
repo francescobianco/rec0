@@ -22,6 +22,7 @@ windows:
   - match: jetbrains-webstorm
 
 audio:
+  processing: auto
   microphone: default
 
 output:

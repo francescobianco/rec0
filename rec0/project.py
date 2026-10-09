@@ -142,9 +142,9 @@ class Project:
     launch: list[Launch] = field(default_factory=list)
     privacy: tuple[privacy.Rule, ...] = privacy.BUILTIN
 
-    def private(self, title: str) -> privacy.Rule | None:
-        """The privacy rule hiding a window with this title, if any."""
-        return privacy.check(self.privacy, title)
+    def private(self, title: str, wm_class: str = "") -> privacy.Rule | None:
+        """The privacy rule hiding a window (by title, or by class for desktop apps), if any."""
+        return privacy.check(self.privacy, title, wm_class)
 
     def output_path(self, now: datetime | None = None) -> Path:
         now = now or datetime.now()

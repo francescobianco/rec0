@@ -81,3 +81,14 @@ def test_set_audio_processing_edits_only_that_line(tmp_path):
                                              "  processing: off\n  microphone: test  # keep\n")
     set_audio_processing(f, True)
     assert load(f).audio.processing is True and "processing: auto" in f.read_text()
+
+
+def test_privacy_covers_chat_sites_and_desktop_apps():
+    p = parse(base(privacy={"allow": ["zoom"]}))
+    assert p.private("(3) WhatsApp - Google Chrome").domain == "web.whatsapp.com"
+    assert p.private("Google Chat - Google Chrome").domain == "chat.google.com"
+    assert p.private("General | Team", "teams-for-linux teams-for-linux").domain == "teams"
+    assert p.private("anything", "Mail thunderbird_thunderbird") is not None
+    assert p.private("capture.pcap", "wireshark Wireshark") is None        # whole class names only
+    assert p.private("Meeting", "zoom zoom") is None                       # lifted by allow
+    assert p.private("Python docs - Google Chrome") is None
