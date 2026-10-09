@@ -23,9 +23,10 @@ from .recorder import Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
 
 CSS = b"""
-.preview { background: black; border-radius: 12px;
-           /* Drawn over the picture, takes no space: a theme-coloured edge. */
-           outline: 1px solid alpha(black, 0.5); outline-offset: -1px; }
+.preview { background: black; border-radius: 12px; }
+/* A layer above the picture (not an outline, which GTK draws under children):
+   the edge is visible on all four sides and follows the rounded corners. */
+.preview-edge { border: 1px solid alpha(black, 0.5); border-radius: 12px; }
 .rec-idle { color: @error_color; }
 .timer { font-feature-settings: "tnum"; font-weight: 600; }
 .recording { color: @error_color; }
@@ -208,6 +209,7 @@ class Window(Adw.ApplicationWindow):
         overlay = Gtk.Overlay(child=self.picture)
         overlay.add_overlay(self.countdown_label)
         overlay.add_overlay(self.rec_badge)
+        overlay.add_overlay(Gtk.Box(css_classes=["preview-edge"], can_target=False))
         self.frame = Gtk.AspectFrame(ratio=16 / 9, obey_child=False, vexpand=True, css_classes=["preview"],
                                      margin_top=12, margin_start=12, margin_end=12)
         self.frame.set_overflow(Gtk.Overflow.HIDDEN)
