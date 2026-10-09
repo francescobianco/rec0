@@ -285,6 +285,7 @@ only and works without a webcam.
 
 ```bash
 git clone https://github.com/francescobianco/rec0 && cd rec0
+make deps                       # install the system packages (apt, asks for sudo)
 make start                      # run from the source tree (development profile + local API)
 make test                       # test suite
 make install                    # install for your user in ~/.local, no root (make uninstall)

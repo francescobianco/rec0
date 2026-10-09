@@ -1,5 +1,6 @@
 # rec0 — development and local installation.
 #
+#   make deps        install the system packages needed to run and test (apt, sudo)
 #   make start       run from the source tree (development profile + dev API)
 #   make api ARGS=…  talk to the running dev instance (see build-aux/devctl.py)
 #   make test        run the test suite
@@ -21,9 +22,28 @@ LINGUAS    := $(shell cat po/LINGUAS)
 MSGFMT     := $(shell command -v msgfmt >/dev/null && echo msgfmt || echo "$(PYTHON) build-aux/msgfmt.py")
 MO_FILES   := $(foreach l,$(LINGUAS),$(BUILD)/locale/$(l)/LC_MESSAGES/rec0.mo)
 
-.PHONY: all build start dev-desktop api test install uninstall pot clean
+.PHONY: all deps build start dev-desktop api test install uninstall pot clean
+
+# Runtime (same as build-aux/deb/control) plus what development needs:
+# schema compiler, gettext, pytest.
+DEPS := python3 python3-gi python3-gi-cairo python3-yaml python3-numpy \
+	gir1.2-gtk-4.0 gir1.2-gtk-3.0 gir1.2-adw-1 gir1.2-gstreamer-1.0 \
+	gir1.2-gdkpixbuf-2.0 gir1.2-graphene-1.0 \
+	gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+	gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-x gstreamer1.0-pipewire \
+	ffmpeg libx11-6 libxfixes3 \
+	libglib2.0-bin gettext python3-pytest
 
 all: build
+
+# Installs only the packages that are missing, so it is quick (and asks no
+# password) when the environment is already ready.
+deps:
+	@missing=$$(for p in $(DEPS); do \
+		dpkg-query -W -f='$${Status}' $$p 2>/dev/null | grep -q 'ok installed' || echo $$p; \
+	done); \
+	if [ -z "$$missing" ]; then echo "All dependencies are installed."; \
+	else echo "Installing:" $$missing; sudo apt-get install -y $$missing; fi
 
 build: $(BUILD)/schemas/gschemas.compiled $(MO_FILES)
 
