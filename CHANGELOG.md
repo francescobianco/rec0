@@ -6,6 +6,15 @@ All notable changes to rec0 are documented here. The format follows
 
 ## [Unreleased]
 
+### Scenes
+
+- Automatic scene switching on Wayland: a GNOME Shell extension, installed
+  with rec0, tells it which window has the focus. Scenes follow the focus and
+  private pages freeze the screen as on X11 (`make shell-extension` installs
+  and enables it from the source tree).
+- Back from a private page to a shareable one, the window plays again: it
+  stayed frozen on its last frame until it was closed.
+
 ### Audio
 
 - Pauses are lowered with sample-continuous fades. The previous envelope was a

@@ -278,14 +278,21 @@ only and works without a webcam.
 - **Wayland**: the screen is captured through the XDG Desktop Portal and
   PipeWire. The first time, GNOME asks which screen to share; the permission
   is remembered (`rec0 forget` resets it). Wayland does not let applications
-  know which window has focus or where it is: there, scenes are switched by
-  hand and the share scene shows the whole screen.
+  know which window has focus: rec0 ships a small **GNOME Shell extension**
+  that tells it, and with it scenes switch on their own (and private pages
+  freeze the video) as on X11. The share scene shows the whole screen. The
+  extension is installed with rec0; enable it in *Extensions* (or with
+  `make shell-extension` from the source tree) and log out and back in once.
+  It publishes the focused window's title, class and geometry on your session
+  bus (`io.github.francescobianco.Rec0.Shell`). Without it, scenes are
+  switched by hand.
 
 ## Development
 
 ```bash
 git clone https://github.com/francescobianco/rec0 && cd rec0
 make deps                       # install the system packages (apt, asks for sudo)
+make shell-extension            # Wayland: GNOME Shell extension for automatic scenes
 make start                      # run from the source tree (development profile + local API)
 make test                       # test suite
 make install                    # install for your user in ~/.local, no root (make uninstall)
@@ -335,6 +342,7 @@ make api ARGS="log"
 | `capture.py` | webcams, microphones, monitors, ScreenCast portal |
 | `x11.py` | direct Xlib access (ctypes): active window, geometry, monitors, pointer |
 | `focus.py` | follows the active window |
+| `shell.py` | follows it on Wayland, through the GNOME Shell extension in `data/gnome-shell/` |
 | `scenes.py` | scene geometry and transitions (pure functions) |
 | `recorder.py` | GStreamer pipeline and `Director`, which animates scenes and applies privacy |
 | `hw.py` | VA-API hardware encoding and decoding, when it works |

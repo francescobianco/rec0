@@ -3,6 +3,7 @@
 #   make deps        install the system packages needed to run and test (apt, sudo)
 #   make start       run from the source tree (development profile + dev API)
 #   make api ARGS=…  talk to the running dev instance (see build-aux/devctl.py)
+#   make shell-extension  install and enable the GNOME Shell extension (Wayland scene switching)
 #   make test        run the test suite
 #   make install     install for this user (PREFIX=~/.local, no root needed)
 #   make uninstall   remove what `make install` installed
@@ -19,10 +20,12 @@ PKGDATADIR := $(DATADIR)/rec0
 LOCALEDIR  := $(DATADIR)/locale
 BUILD      := _build
 LINGUAS    := $(shell cat po/LINGUAS)
+EXT_UUID   := rec0@francescobianco.github.io
+EXT_DIR    := $(DATADIR)/gnome-shell/extensions/$(EXT_UUID)
 MSGFMT     := $(shell command -v msgfmt >/dev/null && echo msgfmt || echo "$(PYTHON) build-aux/msgfmt.py")
 MO_FILES   := $(foreach l,$(LINGUAS),$(BUILD)/locale/$(l)/LC_MESSAGES/rec0.mo)
 
-.PHONY: all deps build start dev-desktop api test install uninstall pot clean
+.PHONY: all deps build start dev-desktop api shell-extension test install uninstall pot clean
 
 # Runtime (same as build-aux/deb/control) plus what development needs:
 # schema compiler, gettext, pytest.
@@ -73,6 +76,14 @@ dev-desktop:
 api:
 	@$(PYTHON) build-aux/devctl.py $(ARGS)
 
+# On Wayland GNOME Shell loads a new extension only at the next login.
+shell-extension:
+	install -Dm 644 -t $(EXT_DIR) data/gnome-shell/$(EXT_UUID)/metadata.json data/gnome-shell/$(EXT_UUID)/extension.js
+	-gnome-extensions enable $(EXT_UUID) 2>/dev/null || \
+		gsettings set org.gnome.shell enabled-extensions \
+		"$$(gsettings get org.gnome.shell enabled-extensions | $(PYTHON) -c 'import ast,sys; l=ast.literal_eval(sys.stdin.read().replace("@as ","")); print(l if "$(EXT_UUID)" in l else l+["$(EXT_UUID)"])')"
+	@echo "Extension installed: log out and back in if rec0 does not see it yet."
+
 test:
 	$(PYTHON) -m pytest -q
 
@@ -100,6 +111,7 @@ install: build
 		$(DATADIR)/icons/hicolor/symbolic/apps/$(APP_ID)-symbolic.svg
 	install -Dm 644 data/$(APP_ID).gschema.xml $(DATADIR)/glib-2.0/schemas/$(APP_ID).gschema.xml
 	install -Dm 644 data/$(APP_ID).mime.xml $(DATADIR)/mime/packages/$(APP_ID).xml
+	install -Dm 644 -t $(EXT_DIR) data/gnome-shell/$(EXT_UUID)/metadata.json data/gnome-shell/$(EXT_UUID)/extension.js
 	-update-mime-database $(DATADIR)/mime
 	glib-compile-schemas $(DATADIR)/glib-2.0/schemas
 	@for l in $(LINGUAS); do \
@@ -110,7 +122,7 @@ install: build
 	@echo "Done: run 'rec0' or find rec0 in the Activities overview."
 
 uninstall:
-	rm -rf $(PKGDATADIR)
+	rm -rf $(PKGDATADIR) $(EXT_DIR)
 	rm -f $(BINDIR)/rec0 \
 		$(DATADIR)/applications/$(APP_ID).desktop \
 		$(DATADIR)/metainfo/$(APP_ID).metainfo.xml \

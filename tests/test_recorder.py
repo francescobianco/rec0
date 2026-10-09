@@ -127,6 +127,77 @@ def test_privacy_holds_scene_and_delays_reveal(tmp_path):
     ]
 
 
+def test_leaving_a_private_page_shares_again(tmp_path):
+    from rec0.recorder import SCREEN_DELAY
+
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    log = []
+
+    def tab(title):
+        return FocusedWindow(1, title + " - Google Chrome", "google-chrome", Rect(0, 32, 800, 600))
+
+    back = 1000 + int(SCREEN_DELAY * 1000) + 200
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(tab("Python docs"))),
+        (900, lambda: d.focus_changed(tab("Home - mybank.example"))),
+        (950, lambda: log.append(("bank", rec.frozen.get(1)))),
+        # Back on a shareable tab: the window plays again, after the delay.
+        (1000, lambda: d.focus_changed(tab("Python docs"))),
+        (1050, lambda: log.append(("early", rec.frozen.get(1)))),
+        (back, lambda: log.append(("docs", rec.frozen.get(1)))),
+    ], until=back + 200)
+    assert not errors
+    assert log == [("bank", True), ("early", True), ("docs", False)]
+
+
+def test_whole_screen_follows_focus_and_privacy(tmp_path, monkeypatch):
+    # Wayland: one capture of the whole screen, driven by the GNOME Shell extension.
+    from rec0.recorder import SCREEN_DELAY
+
+    monkeypatch.setattr(Director, "per_window", property(lambda self: False))
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    log = []
+
+    def chrome(title):
+        return FocusedWindow(7, title + " - Google Chrome", "google-chrome", Rect(0, 32, 800, 600))
+
+    def state(name):
+        log.append((name, d.scene, list(d.windows), rec.frozen.get(d.SCREEN_KEY),
+                    d.private.domain if d.private else d.detail()))
+
+    shown = int(SCREEN_DELAY * 1000) + 200
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(chrome("Python docs"))),
+        (200 + shown, lambda: state("docs")),
+        (900, lambda: d.focus_changed(FocusedWindow(8, "Notes", "notes", Rect(0, 0, 300, 300)))),
+        (950, lambda: state("notes")),
+        (1000, lambda: d.focus_changed(chrome("Home - mybank.example"))),
+        (1050, lambda: state("bank")),
+        (1100, lambda: d.focus_changed(chrome("Python docs"))),
+        (1100 + shown, lambda: state("back")),
+    ], until=1100 + shown + 200)
+    assert not errors
+    docs = ("share", [0], False, "Python docs - Google Chrome")
+    assert log == [
+        ("docs", *docs),
+        ("notes", "camera", [0], False, None),          # outside the project: close-up
+        ("bank", "camera", [0], True, "mybank.example"),   # the screen freezes before it can show
+        ("back", *docs),
+    ]
+
+
+@pytest.mark.parametrize("per_window", [True, False])
+def test_mode_change_before_any_focus(tmp_path, monkeypatch, per_window):
+    # Opening a project: the mode is set before the tracker has reported a window.
+    monkeypatch.setattr(Director, "per_window", property(lambda self: per_window))
+    p, rec, d = _session(tmp_path)
+    for mode in ("auto", "camera", "share"):
+        d.set_mode(mode)
+    assert d.focused is None
+
+
 def test_presented_windows_stay_when_focus_moves_on(tmp_path):
     p, rec, d = _session(tmp_path)
     rec.start(d.frame, p.output_path())

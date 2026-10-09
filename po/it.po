@@ -158,6 +158,9 @@ msgstr "Sorgenti non disponibili"
 msgid "Automatic scene switching is not available in this session"
 msgstr "Il cambio automatico di scena non è disponibile in questa sessione"
 
+msgid "Enable the rec0 GNOME Shell extension to switch scenes automatically"
+msgstr "Abilita l'estensione di GNOME Shell di rec0 per cambiare scena in automatico"
+
 msgid "Project reloaded"
 msgstr "Progetto ricaricato"
 
@@ -511,6 +514,9 @@ msgstr "scena: {scene}"
 
 msgid "note: automatic scene switching is not available in this session (use --scene)"
 msgstr "nota: il cambio automatico di scena non è disponibile in questa sessione (usa --scene)"
+
+msgid "note: enable the rec0 GNOME Shell extension to switch scenes automatically (or use --scene)"
+msgstr "nota: abilita l'estensione di GNOME Shell di rec0 per cambiare scena in automatico (o usa --scene)"
 
 msgid "saved: {path}"
 msgstr "salvato: {path}"

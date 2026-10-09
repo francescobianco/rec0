@@ -17,7 +17,7 @@ from . import config, settings  # noqa: E402
 from . import audio, postprocess  # noqa: E402
 from .bubble import Bubble  # noqa: E402
 from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
-from .focus import FocusTracker  # noqa: E402
+from .focus import tracker_for  # noqa: E402
 from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
 from .project import (EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio_option,  # noqa: E402
                       set_audio_processing, template)
@@ -113,7 +113,7 @@ class Window(Adw.ApplicationWindow):
         self.captures: Captures | None = None
         self.recorder: Recorder | None = None
         self.director: Director | None = None
-        self.tracker: FocusTracker | None = None
+        self.tracker = None    # FocusTracker (X11) or ShellFocusTracker (Wayland)
         self.file_monitor: Gio.FileMonitor | None = None
         self.bubble: Bubble | None = None
         self.last_recording: Path | None = None
@@ -454,9 +454,11 @@ class Window(Adw.ApplicationWindow):
         auto = self.captures.follows_focus
         self.mode_buttons["auto"].set_sensitive(auto)
         if auto:
-            self.tracker = FocusTracker(self.director.focus_changed)
+            self.tracker = tracker_for(self.captures.backend, self.director.focus_changed)
             self.tracker.watch = self.director.watched   # presented windows are followed too
             self.tracker.start()
+        elif project.windows and self.captures.backend == "wayland":
+            self.toast(_("Enable the rec0 GNOME Shell extension to switch scenes automatically"))
         elif project.windows:
             self.toast(_("Automatic scene switching is not available in this session"))
         self.lookup_action("scene").set_state(GLib.Variant("s", "auto" if auto else "camera"))

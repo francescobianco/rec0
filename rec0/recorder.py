@@ -914,8 +914,11 @@ class Director:
     def detail(self) -> str | None:
         if self.private:
             return _("paused, {domain} is private").format(domain=self.private.domain)
-        top = self.focused if self.focused and self.focused.xid in self.windows else None
-        return top.title if self.scene == "share" and top else None
+        if self.per_window:
+            top = self.focused if self.focused and self.focused.xid in self.windows else None
+        else:
+            top = self.windows.get(self.SCREEN_KEY)
+        return top.title or None if self.scene == "share" and top else None
 
     def _placement(self, scene: str):
         cam = self.project.camera
@@ -938,12 +941,14 @@ class Director:
         project_window = (win is not None and not win.hidden
                           and self.project.match_window(win.title, win.wm_class) is not None)
         rule = self.project.private(win.title, win.wm_class) if win is not None else None
-        if win is not None and win.xid in self.windows:
-            self.windows[win.xid] = win
+        # The layer showing this window: its own capture, or the whole screen (Wayland).
+        key = None if win is None else win.xid if self.per_window else self.SCREEN_KEY
+        if win is not None and key in self.windows:
+            self.windows[key] = win
             if rule is not None:
-                self._freeze(win.xid)        # this window only; the others keep playing
-            elif win.xid not in self.revealed:
-                self._reveal_later(win.xid)
+                self._freeze(key)            # this window only; the others keep playing
+            elif key not in self.revealed or self.recorder.frozen.get(key):
+                self._reveal_later(key)      # new, or back from a private page
         if self.mode == "camera" or (self.mode == "auto" and not project_window):
             self._set_private(None)
             self._go("camera")

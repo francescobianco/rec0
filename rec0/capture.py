@@ -379,11 +379,20 @@ class Captures:
         self.area: Rect | None = None         # its usable part (without panels): the virtual desktop
         self.portal: PortalSession | None = None
         self.prepared = False
+        self._shell: bool | None = None       # the GNOME Shell extension is running (Wayland)
 
     @property
     def follows_focus(self) -> bool:
-        """Whether scenes can switch automatically on window focus."""
-        return self.backend == "x11" and self.project.screen.monitor != "test" and bool(self.project.windows)
+        """Whether scenes can switch automatically on window focus: X11 always,
+        Wayland when rec0's GNOME Shell extension is running (see shell.py)."""
+        if self.project.screen.monitor == "test" or not self.project.windows:
+            return False
+        if self.backend == "wayland":
+            if self._shell is None:
+                from . import shell
+                self._shell = shell.available()
+            return self._shell
+        return self.backend == "x11"
 
     def launch_apps(self):
         for item in self.project.launch:

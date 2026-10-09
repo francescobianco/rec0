@@ -28,6 +28,9 @@ install_data('icons/hicolor/scalable/apps/' + app_id + '.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps')
 install_data('icons/hicolor/symbolic/apps/' + app_id + '-symbolic.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'symbolic' / 'apps')
+install_data('gnome-shell/rec0@francescobianco.github.io/metadata.json',
+  'gnome-shell/rec0@francescobianco.github.io/extension.js',
+  install_dir: get_option('datadir') / 'gnome-shell' / 'extensions' / 'rec0@francescobianco.github.io')
 install_data('../assets/background.jpg', install_dir: pkgdatadir)
 install_data('../assets/rnnoise/sh.rnnn', install_dir: pkgdatadir / 'rnnoise')
 

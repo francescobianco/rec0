@@ -144,7 +144,7 @@ def cmd_record(args) -> int:
     from gi.repository import GLib
 
     from .capture import CaptureError, Captures
-    from .focus import FocusTracker
+    from .focus import tracker_for
     from .recorder import Director, Recorder
     from .scenes import scene_label
 
@@ -165,11 +165,13 @@ def cmd_record(args) -> int:
         "\r\033[K" + _("scene: {scene}").format(scene=scene_label(scene)) + (f" — {title}" if title else "")))
     result = {"code": 0}
     bubble = None
-    tracker = FocusTracker(director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
+    tracker = tracker_for(captures.backend, director.focus_changed) if captures.follows_focus and args.scene == "auto" else None
     if tracker:
         tracker.watch = director.watched
     if args.scene != "auto":
         director.set_mode(args.scene)
+    elif not captures.follows_focus and project.windows and captures.backend == "wayland":
+        print(_("note: enable the rec0 GNOME Shell extension to switch scenes automatically (or use --scene)"))
     elif not captures.follows_focus and project.windows:
         print(_("note: automatic scene switching is not available in this session (use --scene)"))
 
