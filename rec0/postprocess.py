@@ -17,13 +17,24 @@ def original_path(path: Path) -> Path:
     return path.with_name(f"{path.stem}.original{path.suffix}")
 
 
-def finalize(project: Project, path: Path, progress: Callable[[str, float], None] | None = None) -> audio.Report:
-    """Replace `path` with its processed version. The recording is renamed first and
-    restored if anything fails, so a recording is never lost."""
+def needed(project: Project, path: Path) -> bool:
+    """Whether a recording needs finishing: optimizing the voice, or mixing the
+    separate system sound track in (players play one audio track)."""
+    return audio.available() and (project.audio.processing or audio.audio_tracks(path) > 1)
+
+
+def finalize(project: Project, path: Path, progress: Callable[[str, float], None] | None = None):
+    """Replace `path` with its processed (or just mixed) version: an audio.Report, or
+    None for a plain mix. The recording, with its separate tracks, is renamed first
+    and restored if anything fails, so a recording is never lost."""
     original = original_path(path)
     os.replace(path, original)
     try:
-        report = audio.process(original, path, project.audio.target, progress)
+        if project.audio.processing:
+            report = audio.process(original, path, project.audio.target, progress)
+        else:
+            audio.mixdown(original, path, progress)
+            report = None
     except BaseException:
         if path.exists():
             path.unlink()

@@ -101,7 +101,7 @@ class Window:
 @dataclass
 class Audio:
     microphone: str | None = "default"   # None = disabled, "test" = test tone
-    desktop: bool = False
+    desktop: bool | str = False         # system sound, recorded as its own track ("test": tone)
     microphone_volume: float = 1.0
     desktop_volume: float = 1.0
     processing: bool = True             # adaptive post-processing after recording (audio.py)
@@ -168,24 +168,27 @@ class Project:
 
 
 def set_audio_processing(path: Path, enabled: bool):
-    """Write audio.processing into a project file, touching only that line
+    set_audio_option(path, "processing", "auto" if enabled else "off")
+
+
+def set_audio_option(path: Path, key: str, value: str):
+    """Write audio.<key> into a project file, touching only that line
     (comments and layout are the user's)."""
-    value = "auto" if enabled else "off"
     lines = path.read_text().splitlines(keepends=True)
     audio = next((i for i, l in enumerate(lines) if re.match(r"audio\s*:\s*(#.*)?$", l.rstrip("\n"))), None)
     if audio is None:
-        lines.append(("" if not lines or lines[-1].endswith("\n") else "\n") + f"\naudio:\n  processing: {value}\n")
+        lines.append(("" if not lines or lines[-1].endswith("\n") else "\n") + f"\naudio:\n  {key}: {value}\n")
     else:
         end = next((i for i in range(audio + 1, len(lines))
                     if lines[i].strip() and not lines[i].startswith((" ", "\t", "#"))), len(lines))
         for i in range(audio + 1, end):
-            m = re.match(r"(\s+processing\s*:\s*)(\S+)(.*)", lines[i].rstrip("\n"))
+            m = re.match(rf"(\s+{key}\s*:\s*)(\S+)(.*)", lines[i].rstrip("\n"))
             if m:
                 lines[i] = f"{m[1]}{value}{m[3]}\n"
                 break
         else:
             indent = next((re.match(r"\s+", l)[0] for l in lines[audio + 1:end] if l.strip()), "  ")
-            lines.insert(audio + 1, f"{indent}processing: {value}\n")
+            lines.insert(audio + 1, f"{indent}{key}: {value}\n")
     path.write_text("".join(lines))
 
 
@@ -371,7 +374,7 @@ def _audio(raw: dict, errors: list[str]) -> Audio:
         mic = "default"
     return Audio(
         microphone=None if mic is None else str(mic),
-        desktop=bool(raw.get("desktop", False)),
+        desktop="test" if raw.get("desktop") == "test" else bool(raw.get("desktop", False)),
         microphone_volume=_float(raw.get("microphone_volume", 1.0), "audio.microphone_volume", errors),
         desktop_volume=_float(raw.get("desktop_volume", 1.0), "audio.desktop_volume", errors),
         processing=raw.get("processing", "auto") not in (False, "off", "none"),
@@ -563,7 +566,7 @@ windows:
 
 audio:
   microphone: default        # default, false, "test" or part of the device name
-  desktop: false             # system sound
+  desktop: false             # system sound (its own track, kept as heard)
   processing: auto           # adaptive noise reduction, leveling and loudness after recording (or off)
   target: youtube            # loudness target: youtube (-14 LUFS), podcast (-16) or broadcast (-23)
   keep_original: true        # keep the unprocessed file next to the result

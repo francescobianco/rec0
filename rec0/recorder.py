@@ -116,6 +116,7 @@ class Recorder:
         self._branches: dict[int, dict] = {}
         self._crops: dict[int, tuple] = {}
         self.on_window_lost: Callable | None = None   # (key) a window's capture failed
+        self.audio_tracks = 0
         self.frame_rgb = frame_rgb(project.screen.frame)   # frame around windows; None = no frame
         self.on_bubble_frame: Callable | None = None   # (bgra, w, h) from a streaming thread
         self.on_preview: Callable | None = None
@@ -201,33 +202,39 @@ class Recorder:
         return f"{placement.rect.width}/{placement.rect.height}"
 
     def _audio(self, encode: str | None) -> list[str]:
+        """One branch per source, each its own track: microphone first (it is the one
+        post-processing works on), then system sound (kept exactly as heard).
+
+        No mixer while recording: audiomixer dropped and resynced late microphone
+        buffers (thousands of 10 ms cuts measured in the GUI), and mixing before
+        processing would treat a video playing underneath as the speaker's voice.
+        """
         a = self.project.audio
-        inputs = []
+        tracks = []
         convert = "audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2"
         if a.microphone == "test":
-            inputs.append(f"audiotestsrc is-live=true wave=sine volume=0.1 ! {convert} "
+            tracks.append(f"audiotestsrc is-live=true wave=sine volume=0.1 ! {convert} "
                           f"! level name=miclevel interval=100000000 ! volume volume={a.microphone_volume}")
         elif a.microphone:
             dev = find_microphone(a.microphone)
             device = f" device={q(dev)}" if dev else ""
-            inputs.append(f"pulsesrc{device} client-name=rec0 ! {convert} "
+            tracks.append(f"pulsesrc{device} client-name=rec0 ! {convert} "
                           f"! level name=miclevel interval=100000000 ! volume volume={a.microphone_volume}")
-        if a.desktop:
-            inputs.append(f"pulsesrc device=@DEFAULT_MONITOR@ client-name=rec0 ! {convert} "
+        if a.desktop == "test":
+            tracks.append(f"audiotestsrc is-live=true wave=sine freq=880 volume=0.05 ! {convert}")
+        elif a.desktop:
+            tracks.append(f"pulsesrc device=@DEFAULT_MONITOR@ client-name=rec0 ! {convert} "
                           f"! volume volume={a.desktop_volume}")
-        if not inputs:
-            return []
-        gate = "identity name=arec ! " if encode else ""
-        fade = "volume name=outrovol ! " if encode else ""   # faded out with the closing
-        out = f"{fade}{gate}audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
-        if len(inputs) == 1:
-            # A single input needs no mixer. audiomixer drops and resyncs buffers that
-            # arrive late for its deadline (measured: thousands of 10 ms cuts in the
-            # GUI with a USB microphone): audible clicks.
-            return [f"{inputs[0]} ! queue ! {out}"]
-        # Two inputs: give late buffers 200 ms instead of dropping them.
-        return [f"audiomixer name=amix latency={200 * Gst.MSECOND} ! {out}",
-                *(f"{i} ! queue ! amix." for i in inputs)]
+        out = []
+        for i, src in enumerate(tracks):
+            if encode:
+                # Faded with the closing; gated to the recording's start (see schedule_begin).
+                out.append(f"{src} ! queue ! volume name=outrovol{i} ! identity name=arec{i} "
+                           f"! audioconvert ! audio/x-raw,channels=2 ! queue ! {encode}")
+            else:
+                out.append(f"{src} ! queue ! fakesink sync=false")
+        self.audio_tracks = len(tracks)
+        return out
 
     # ---- scenes -----------------------------------------------------------
 
@@ -390,7 +397,7 @@ class Recorder:
         bubblesink = self.pipeline.get_by_name("bubblesink")
         if bubblesink is not None:
             bubblesink.connect("new-sample", self._on_bubble_sample)
-        for name in ("vrec", "arec"):
+        for name in self._gated():
             el = self.pipeline.get_by_name(name)
             if el is not None:
                 el.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, self._gate)
@@ -440,8 +447,10 @@ class Recorder:
         clock = self.pipeline.get_clock()
         now = clock.get_time() - self.pipeline.get_base_time() if clock else 0
         self._outro = {"t0": now, "done": False}
-        vol = self.pipeline.get_by_name("outrovol")
-        if vol is not None:
+        for i in range(self.audio_tracks):
+            vol = self.pipeline.get_by_name(f"outrovol{i}")
+            if vol is None:
+                continue
             cs = GstController.InterpolationControlSource()
             cs.set_property("mode", GstController.InterpolationMode.LINEAR)
             vol.add_control_binding(GstController.DirectControlBinding.new_absolute(vol, "volume", cs))
@@ -546,10 +555,13 @@ class Recorder:
         if not self.recording or self._begin_rt is not None:
             return
         self._begin_rt = at
-        for name in ("vrec", "arec"):
+        for name in self._gated():
             el = self.pipeline.get_by_name(name)
             if el is not None:
                 el.get_static_pad("src").set_offset(-at)
+
+    def _gated(self) -> list[str]:
+        return ["vrec", *(f"arec{i}" for i in range(self.audio_tracks))]
 
     @property
     def begin_time(self) -> int | None:

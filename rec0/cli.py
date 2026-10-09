@@ -247,13 +247,15 @@ def cmd_record(args) -> int:
         GLib.timeout_add(int(args.duration * 1000), request_stop)
     loop.run()
     captures.close()
-    if result["code"] == 0 and output.exists() and project.audio.processing and not args.no_process:
+    if result["code"] == 0 and output.exists() and not args.no_process:
         from . import audio, postprocess
 
         if not audio.available():
             print(_("note: install ffmpeg to optimize the audio"))
             return 0
-        print(_("optimizing audio…"))
+        if not postprocess.needed(project, output):
+            return 0
+        print(_("optimizing audio…") if project.audio.processing else _("mixing audio…"))
         try:
             report = postprocess.finalize(project, output, _progress_printer())
         except audio.AudioError as e:
@@ -261,7 +263,10 @@ def cmd_record(args) -> int:
                   file=sys.stderr)
             return 1
         print()
-        _print_report(report)
+        if report:
+            _print_report(report)
+        else:
+            print(_("saved: {path}").format(path=output))
     return result["code"]
 
 

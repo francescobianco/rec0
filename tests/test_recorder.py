@@ -146,3 +146,16 @@ def test_presented_windows_stay_when_focus_moves_on(tmp_path):
         ("camera", "camera", [11, 12]),
         ("closed", [12], [12]),
     ]
+
+
+def test_system_sound_is_its_own_track_and_mixed_in_at_the_end(tmp_path):
+    from rec0 import audio, postprocess
+
+    p, rec, d = _session(tmp_path, audio={"microphone": "test", "desktop": "test", "processing": "off"})
+    out = p.output_path()
+    rec.start(d.frame, out)
+    assert not _run(rec, p, [], until=1500)
+    assert audio.audio_tracks(out) == 2                       # voice and system sound, separate
+    assert postprocess.finalize(p, out) is None               # optimization off: just mixed
+    assert audio.audio_tracks(out) == 1
+    assert audio.audio_tracks(postprocess.original_path(out)) == 2

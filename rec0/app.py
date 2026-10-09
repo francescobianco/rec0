@@ -19,7 +19,8 @@ from .bubble import Bubble  # noqa: E402
 from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
 from .focus import FocusTracker  # noqa: E402
 from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
-from .project import EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio_processing, template  # noqa: E402
+from .project import (EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio_option,  # noqa: E402
+                      set_audio_processing, template)
 
 PROJECT_MIME = "application/x-rec0-project"
 from .recorder import Director, Recorder  # noqa: E402
@@ -306,8 +307,18 @@ class Window(Adw.ApplicationWindow):
         menu.append_section(None, section)
         section = Gio.Menu()
         section.append(_("_Optimize Audio"), "win.process-audio")
+        section.append(_("Record _System Sound"), "win.system-sound")
         menu.append_section(None, section)
         return menu
+
+    def _on_system_sound(self, action: Gio.SimpleAction, value: GLib.Variant):
+        # Its own track: kept exactly as heard, laid over the processed voice.
+        if self.recording or self._countdown is not None or not self.project_path:
+            return
+        action.set_state(value)
+        set_audio_option(self.project_path, "desktop", "true" if value.get_boolean() else "false")
+        self.toast(_("System sound recorded on its own track, kept as heard") if value.get_boolean()
+                   else _("System sound not recorded"))
 
     def _on_process_audio(self, action: Gio.SimpleAction, value: GLib.Variant):
         # Saved in the project file; the file monitor reloads the project.
@@ -358,11 +369,14 @@ class Window(Adw.ApplicationWindow):
         process = Gio.SimpleAction.new_stateful("process-audio", None, GLib.Variant("b", True))
         process.connect("change-state", self._on_process_audio)
         self.add_action(process)
+        system = Gio.SimpleAction.new_stateful("system-sound", None, GLib.Variant("b", False))
+        system.connect("change-state", self._on_system_sound)
+        self.add_action(system)
         mirror = Gio.SimpleAction.new_stateful("mirror", None,
                                                GLib.Variant("b", self.settings.get_boolean("mirror-camera")))
         mirror.connect("change-state", self._on_mirror)
         self.add_action(mirror)
-        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "mirror", "process-audio"):
+        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "mirror", "process-audio", "system-sound"):
             self.lookup_action(name).set_enabled(False)
 
         for action, accels in {
@@ -408,11 +422,12 @@ class Window(Adw.ApplicationWindow):
             # aspect ratio: no black bands around it.
             self._fitted = True
             self.frame.add_tick_callback(self._fit_when_ready)
-        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "process-audio"):
+        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "process-audio", "system-sound"):
             self.lookup_action(name).set_enabled(True)
         self.lookup_action("camera").set_enabled(project.camera is not None)
         self.lookup_action("mirror").set_enabled(project.camera is not None)
         self.lookup_action("process-audio").set_state(GLib.Variant("b", project.audio.processing))
+        self.lookup_action("system-sound").set_state(GLib.Variant("b", bool(project.audio.desktop)))
         self.settings.set_string("last-project", str(path.resolve()))
         # Registered under the application name ("rec0"), used to list recent projects.
         Gtk.RecentManager.get_default().add_item(path.resolve().as_uri())
@@ -590,7 +605,7 @@ class Window(Adw.ApplicationWindow):
         self.timer.remove_css_class("dim-label")
         self.rec_badge.set_visible(True)
         self.preview_edge.add_css_class("recording")
-        for name in ("camera", "microphone", "mirror", "process-audio"):
+        for name in ("camera", "microphone", "mirror", "process-audio", "system-sound"):
             self.lookup_action(name).set_enabled(False)
         self.rec_btn.remove_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-playback-stop-symbolic")
@@ -616,7 +631,7 @@ class Window(Adw.ApplicationWindow):
         self.timer.add_css_class("dim-label")
         self.rec_badge.set_visible(False)
         self.preview_edge.remove_css_class("recording")
-        for name in ("camera", "microphone", "mirror", "process-audio"):
+        for name in ("camera", "microphone", "mirror", "process-audio", "system-sound"):
             self.lookup_action(name).set_enabled(self.project is not None)
         self.rec_btn.add_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-record-symbolic")
@@ -638,18 +653,20 @@ class Window(Adw.ApplicationWindow):
             self.close()
             return
         self._start_preview()
-        if self.project.audio.processing and audio.available():
+        if postprocess.needed(self.project, path):
             self._process_audio(path)
         else:
             self._announce(path)
 
     def _process_audio(self, path: Path):
         self.processing = path
-        self.status.set_label(_("Optimizing audio…"))
+        optimizing = self.project.audio.processing
+        self.status.set_label(_("Optimizing audio…") if optimizing else _("Mixing audio…"))
 
         def progress(_step, value):
             if self.processing == path:
-                self.status.set_label(_("Optimizing audio… {pct:.0%}").format(pct=value))
+                label = _("Optimizing audio… {pct:.0%}") if optimizing else _("Mixing audio… {pct:.0%}")
+                self.status.set_label(label.format(pct=value))
 
         def done(report, error):
             self.processing = None
@@ -657,7 +674,7 @@ class Window(Adw.ApplicationWindow):
             if error:
                 self.get_application().log(f"audio processing failed: {error}")
                 self.toast(_("Audio optimization failed, the original recording was kept: {error}").format(error=error))
-            else:
+            elif report:
                 self.last_report = report
                 self.get_application().log("audio: " + "; ".join(
                     f"{s.name} ({s.reason})" for s in report.stages if s.enabled))

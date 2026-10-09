@@ -24,6 +24,7 @@ windows:
 audio:
   processing: auto
   microphone: default
+  desktop: true              # what you hear, on its own track, kept as heard
 
 output:
   directory: ~/Videos/rec0/dev

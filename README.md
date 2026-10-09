@@ -79,8 +79,17 @@ Il denoise è **sotto controllo in retroazione**: prima del rendering il process
 quanta voce sopravvive e, se la rete neurale ne toglie più di 3 dB, ne riduce la
 miscelazione o passa a un denoise spettrale delicato. La voce viene prima della pulizia.
 
-L'originale resta accanto al risultato (`nome.original.mp4`) e, se l'elaborazione
-fallisce, la registrazione viene ripristinata. Il video non viene ricodificato.
+**Audio multitraccia.** Microfono e audio di sistema (quello che ascolti mentre
+registri: un video, un brano) vengono registrati su **tracce separate**. Il processore
+lavora solo sulla voce; l'audio di sistema viene sovrapposto **identico all'originale**,
+e un limitatore interviene solo se la somma saturerebbe. Anche con l'ottimizzazione
+disattivata le tracce vengono unite in una, perché i lettori ne riproducono una sola.
+Con le casse il microfono capta anche l'audio di sistema: per una sovrapposizione
+pulita usa le cuffie.
+
+L'originale, con le tracce separate, resta accanto al risultato (`nome.original.mp4`)
+e, se l'elaborazione fallisce, la registrazione viene ripristinata. Il video non viene
+ricodificato.
 
 ```yaml
 audio:
@@ -191,7 +200,7 @@ privacy:
 
 audio:
   microphone: default        # default, false, parte del nome del dispositivo
-  desktop: false             # audio di sistema
+  desktop: false             # audio di sistema: traccia a parte, mantenuta com'è
 
 launch:                      # applicazioni da avviare all'apertura
   - command: firefox https://docs.python.org/3/

@@ -128,6 +128,15 @@ msgstr "Nessun audio"
 msgid "_Optimize Audio"
 msgstr "_Ottimizza l'audio"
 
+msgid "Record _System Sound"
+msgstr "Registra l'audio di _sistema"
+
+msgid "System sound recorded on its own track, kept as heard"
+msgstr "Audio di sistema registrato su una traccia a parte, mantenuto com'è"
+
+msgid "System sound not recorded"
+msgstr "Audio di sistema non registrato"
+
 msgid "Audio optimization off: recordings keep the original sound"
 msgstr "Ottimizzazione audio disattivata: le registrazioni mantengono l'audio originale"
 
@@ -173,8 +182,14 @@ msgstr "Ferma la registrazione"
 msgid "Saving…"
 msgstr "Salvataggio…"
 
+msgid "Mixing audio…"
+msgstr "Missaggio audio…"
+
 msgid "Optimizing audio…"
 msgstr "Ottimizzazione audio…"
+
+msgid "Mixing audio… {pct:.0%}"
+msgstr "Missaggio audio… {pct:.0%}"
 
 msgid "Optimizing audio… {pct:.0%}"
 msgstr "Ottimizzazione audio… {pct:.0%}"
@@ -512,6 +527,9 @@ msgstr "registrazione in {path} — Ctrl+C per fermare"
 msgid "note: install ffmpeg to optimize the audio"
 msgstr "nota: installa ffmpeg per ottimizzare l'audio"
 
+msgid "mixing audio…"
+msgstr "missaggio audio…"
+
 msgid "optimizing audio…"
 msgstr "ottimizzazione audio…"
 
@@ -665,7 +683,7 @@ msgid ""
 "\n"
 "audio:\n"
 "  microphone: default        # default, false, \"test\" or part of the device name\n"
-"  desktop: false             # system sound\n"
+"  desktop: false             # system sound (its own track, kept as heard)\n"
 "  processing: auto           # adaptive noise reduction, leveling and loudness after recording (or off)\n"
 "  target: youtube            # loudness target: youtube (-14 LUFS), podcast (-16) or broadcast (-23)\n"
 "  keep_original: true        # keep the unprocessed file next to the result\n"
@@ -728,7 +746,7 @@ msgstr ""
 "\n"
 "audio:\n"
 "  microphone: default        # default, false, \"test\" o parte del nome del dispositivo\n"
-"  desktop: false             # audio di sistema\n"
+"  desktop: false             # audio di sistema (traccia a parte, mantenuta com'è)\n"
 "  processing: auto           # riduzione del rumore, livellamento e loudness adattivi dopo la registrazione (o off)\n"
 "  target: youtube            # loudness: youtube (-14 LUFS), podcast (-16) o broadcast (-23)\n"
 "  keep_original: true        # conserva il file non elaborato accanto al risultato\n"

@@ -192,10 +192,28 @@ def probe_duration(path: str | Path) -> float:
         return 0.0
 
 
-def has_audio(path: str | Path) -> bool:
+def track_channels(path: str | Path) -> list[int]:
+    """Channel count of each audio track."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+                        "stream=channels", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
+    return [int(c) for c in r.stdout.split() if c.isdigit()]
+
+
+def _to_stereo(channels: int) -> str:
+    # A mono track is duplicated to both sides at full level (the default
+    # upmix spreads it at -3 dB per side, which would lower it).
+    up = "pan=stereo|c0=c0|c1=c0," if channels == 1 else ""
+    return f"{up}aformat=sample_fmts=fltp:sample_rates={RATE}:channel_layouts=stereo"
+
+
+def audio_tracks(path: str | Path) -> int:
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
                         "stream=index", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
-    return bool(r.stdout.strip())
+    return len(r.stdout.split())
+
+
+def has_audio(path: str | Path) -> bool:
+    return audio_tracks(path) > 0
 
 
 def _window_levels(stdout: str) -> list[float]:
@@ -556,7 +574,8 @@ class Report:
 def _loudnorm_pass(inputs: list[str], chain: str, lufs: float, tp: float) -> dict:
     """Loudness of `inputs` (input options + path) after `chain`."""
     graph = ",".join(x for x in (chain, f"loudnorm=I={lufs}:TP={tp}:LRA=11:print_format=json") if x)
-    err = _ffmpeg([*inputs[:-1], "-i", inputs[-1], "-vn", "-af", graph, *_null()])
+    # The first audio track: the voice (system sound, if any, is a separate track).
+    err = _ffmpeg([*inputs[:-1], "-i", inputs[-1], "-map", "0:a:0", "-af", graph, *_null()])
     m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", err, re.S)
     if not m:
         raise AudioError("loudness measurement failed")
@@ -617,8 +636,13 @@ def guard_denoise(a: Analysis, src: str, head: list[str], p: Plan) -> float:
     return loss
 
 
-def render_chain(p: Plan, measured: dict) -> str:
-    """Final filter: planned stages, then linear loudness normalisation, then the limiter."""
+def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: tuple[int, int] = (2, 2)) -> str:
+    """Final filter: planned stages, then linear loudness normalisation, then the limiter.
+
+    With a system sound track (second audio track) this is a filtergraph: the voice
+    is processed, the system sound is added exactly as it was heard, and only the
+    true-peak limiter acts on the sum (it is transparent unless the peaks clip).
+    """
     loud = (f"loudnorm=I={p.target_lufs}:TP={p.target_tp}:LRA=11"
             f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
             f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
@@ -628,7 +652,26 @@ def render_chain(p: Plan, measured: dict) -> str:
     limiter = next((s.filter for s in stages if s.name == "limiter"), "")
     # The limiter runs 4x oversampled so that it also catches inter-sample (true) peaks.
     oversampled = f"aresample={RATE * 4},{limiter},aresample={RATE}" if limiter else f"aresample={RATE}"
-    return ",".join(x for x in (before, loud, oversampled) if x)
+    if not system_track:
+        return ",".join(x for x in (before, loud, oversampled) if x)
+    voice = ",".join(x for x in (before, loud, f"aresample={RATE}") if x)
+    return (f"[0:a:0]{voice},{_to_stereo(channels[0])}[voice];"
+            f"[0:a:1]aresample={RATE},{_to_stereo(channels[1])}[system];"
+            f"[voice][system]amix=inputs=2:normalize=0:duration=longest,{oversampled}[out]")
+
+
+def mixdown(src: str | Path, dst: str | Path, progress: Callable[[str, float], None] | None = None):
+    """Voice and system sound tracks into one, untouched (players play one track only).
+    The limiter only acts if the sum would clip."""
+    if not available():
+        raise AudioError(_("ffmpeg is required for audio processing"))
+    ch = track_channels(src) + [2, 2]
+    graph = (f"[0:a:0]aresample={RATE},{_to_stereo(ch[0])}[a];[0:a:1]aresample={RATE},{_to_stereo(ch[1])}[b];"
+             f"[a][b]amix=inputs=2:normalize=0:duration=longest,aresample={RATE * 4},"
+             f"alimiter=limit=0.977:attack=2:release=50:level=disabled,aresample={RATE}[out]")
+    _ffmpeg(["-i", str(src), "-map", "0:v?", "-filter_complex", graph, "-map", "[out]", "-c:v", "copy",
+             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
+            progress=(lambda f: progress("render", f)) if progress else None, duration=probe_duration(src))
 
 
 def process(src: str | Path, dst: str | Path, target: str = "youtube",
@@ -661,8 +704,12 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
                                             if s.enabled and s.filter and s.name != "limiter"),
                               p.target_lufs, p.target_tp)
     step("render", 0.4)
-    chain = render_chain(p, measured)
-    _ffmpeg([*head, "-i", src, "-map", "0:v?", "-map", "0:a:0", "-c:v", "copy", "-af", chain,
+    channels = track_channels(src)
+    system = len(channels) > 1
+    chain = render_chain(p, measured, system, tuple(channels[:2]) if system else (2, 2))
+    audio_args = (["-filter_complex", chain, "-map", "[out]"] if system
+                  else ["-map", "0:a:0", "-af", chain])
+    _ffmpeg([*head, "-i", src, "-map", "0:v?", *audio_args, "-c:v", "copy",
              "-c:a", "aac", "-b:a", "192k", "-ar", str(RATE), "-movflags", "+faststart", dst],
             progress=lambda f: step("render", 0.4 + 0.5 * f), duration=a.duration)
     step("verify", 0.9)
@@ -672,4 +719,5 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
         "integrated_lufs": float(after["input_i"]),
         "true_peak_dbtp": float(after["input_tp"]),
         "loudness_range_lu": float(after["input_lra"]),
+        "system_sound": system,
     })
