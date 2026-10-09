@@ -30,7 +30,7 @@ from gi.repository import GstController  # noqa: E402
 gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
-from . import hw  # noqa: E402
+from . import hw, x11  # noqa: E402
 from .bubble import draw_ring  # noqa: E402
 from .i18n import _  # noqa: E402
 
@@ -317,11 +317,14 @@ class Recorder:
         # The preview alone shrinks each window right after capture: everything after
         # (delay, crop, frame) then works on a fraction of the pixels.
         shrink = "! videoscale ! capsfilter name=shrink " if self.scale < 1 else ""
+        # The pointer, drawn at capture time (before the privacy delay) in window coordinates.
+        pointer = ("! cairooverlay name=pointer "
+                   if self.project.screen.cursor and self.sources[key].startswith("ximagesrc") else "")
         desc = (
             # Kept in the capture's own BGRx through the delay: I420 there meant two full
             # colour conversions per frame (measured ~45% of a core per maximized window).
             f"{self.sources[key]} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! video/x-raw,format=BGRx "
-            f"{shrink}"
+            f"{pointer}{shrink}"
             # Held back SCREEN_DELAY: privacy decisions apply before frames are composed.
             # Bounded: if anything downstream stalls, old frames are dropped instead of
             # the queue growing until the system runs out of memory.
@@ -354,6 +357,9 @@ class Recorder:
             # On the scaler's input: the target size must be set before it negotiates.
             scaler = shrink.get_static_pad("sink").get_peer().get_parent_element()
             scaler.get_static_pad("sink").add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, self._on_capture_caps, shrink)
+        pointer = bin_.get_by_name("pointer")
+        if pointer is not None:
+            pointer.connect("draw", self._on_pointer_draw, key, {})
         mask = bin_.get_by_name("mask")
         mask.connect("caps-changed", self._on_window_caps, b)
         mask.connect("draw", self._on_window_draw, b)
@@ -757,6 +763,24 @@ class Recorder:
     def _on_mask_caps(self, _overlay, caps):
         s = caps.get_structure(0)
         self._mask_size = (s.get_value("width"), s.get_value("height"))
+
+    def _on_pointer_draw(self, _overlay, cr, _ts, _dur, key, state):
+        """Mouse pointer over window `key`. Runs in that branch's streaming thread,
+        so it keeps its own X connection; the cursor image is converted once."""
+        conn = state.get("x11")
+        if conn is None:
+            conn = state["x11"] = x11.X11()
+        got = conn.pointer(key, state.get("cursor"))
+        if got is None:
+            return
+        x, y, cursor = got
+        if cursor is not state.get("cursor"):
+            state["cursor"] = cursor
+            state["surface"] = cairo.ImageSurface.create_for_data(
+                bytearray(cursor.argb), cairo.FORMAT_ARGB32, cursor.width, cursor.height, cursor.width * 4)
+        if cursor.visible:
+            cr.set_source_surface(state["surface"], x - cursor.xhot, y - cursor.yhot)
+            cr.paint()
 
     def _on_capture_caps(self, _pad, info, shrink):
         ev = info.get_event()

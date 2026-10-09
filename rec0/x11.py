@@ -1,4 +1,4 @@
-"""Minimal X11 client over ctypes (libX11 + libXrandr).
+"""Minimal X11 client over ctypes (libX11 + libXrandr + libXfixes).
 
 Replaces xprop / xwininfo / xrandr, which are not available inside a Flatpak
 runtime. Each X11 instance owns its own Display connection: use one per
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import threading
-from ctypes import POINTER, Structure, byref, c_char_p, c_int, c_long, c_ubyte, c_ulong, c_void_p
+from ctypes import POINTER, Structure, byref, c_char_p, c_int, c_long, c_short, c_ubyte, c_ulong, c_ushort, c_void_p
 from dataclasses import dataclass
 
 from .project import Rect
@@ -65,11 +65,37 @@ class XRRMonitorInfo(Structure):
                 ("mwidth", c_int), ("mheight", c_int), ("outputs", POINTER(c_ulong))]
 
 
+class XFixesCursorImage(Structure):
+    _fields_ = [("x", c_short), ("y", c_short), ("width", c_ushort), ("height", c_ushort),
+                ("xhot", c_ushort), ("yhot", c_ushort), ("cursor_serial", c_ulong),
+                ("pixels", POINTER(c_ulong)), ("atom", Atom), ("name", c_char_p)]
+
+
+@dataclass(frozen=True)
+class Cursor:
+    """The mouse pointer's image: premultiplied ARGB32, like cairo's FORMAT_ARGB32."""
+    serial: int
+    width: int
+    height: int
+    xhot: int
+    yhot: int
+    argb: bytes          # width * height * 4 bytes, native endian
+    visible: bool        # False for a blank or shapeless image (a hidden pointer)
+
+
+def has_shape(pixels) -> bool:
+    """A pointer has a shape: transparent pixels around it. A blank image, or a filled
+    square (what a hidden pointer can read back as), is not one."""
+    transparent = sum(1 for p in pixels if not p >> 24)
+    return transparent < len(pixels) and transparent >= len(pixels) // 10
+
+
 ErrorHandler = ctypes.CFUNCTYPE(c_int, Display_p, POINTER(XErrorEvent))
 
 _lock = threading.Lock()
 _xlib = None
 _xrandr = None
+_xfixes = None
 _handler = None
 _errors: dict[int, int] = {}    # display address -> last error code
 
@@ -83,7 +109,7 @@ def _on_error(display, event) -> int:
 
 def _load():
     """Load the libraries once; returns libX11 or None."""
-    global _xlib, _xrandr, _handler
+    global _xlib, _xrandr, _xfixes, _handler
     with _lock:
         if _xlib is not None:
             return _xlib or None
@@ -127,6 +153,13 @@ def _load():
             _xrandr = r
         except (OSError, AttributeError):
             _xrandr = None
+        try:
+            f = ctypes.CDLL("libXfixes.so.3")
+            f.XFixesGetCursorImage.argtypes = [Display_p]
+            f.XFixesGetCursorImage.restype = POINTER(XFixesCursorImage)
+            _xfixes = f
+        except (OSError, AttributeError):
+            _xfixes = None
         _xlib = x
         return x
 
@@ -216,6 +249,31 @@ class X11:
         if not ids or not ids[0]:
             return None
         return self.window_info(ids[0])
+
+    def pointer(self, wid: int, cache: Cursor | None = None) -> tuple[int, int, Cursor] | None:
+        """Where the pointer's hotspot is relative to window `wid`, and its image.
+        `cache` (the last image returned) is reused while the cursor stays the same."""
+        if not self._dpy or not _xfixes:
+            return None
+        img = _xfixes.XFixesGetCursorImage(self._dpy)
+        if not img:
+            return None
+        try:
+            ci = img.contents
+            _errors.pop(self._dpy, None)
+            wx, wy, child = c_int(), c_int(), Window()
+            if not self._x.XTranslateCoordinates(self._dpy, self.root, wid, ci.x, ci.y,
+                                                 byref(wx), byref(wy), byref(child)) or self._dpy in _errors:
+                return None
+            if cache is not None and cache.serial == ci.cursor_serial:
+                return wx.value, wy.value, cache
+            n = ci.width * ci.height
+            # XFixes hands out one pixel per unsigned long (64 bits here): keep the low 32.
+            px = (ctypes.c_uint32 * n)(*(ci.pixels[i] & 0xFFFFFFFF for i in range(n)))
+            cursor = Cursor(ci.cursor_serial, ci.width, ci.height, ci.xhot, ci.yhot, bytes(px), has_shape(px))
+            return wx.value, wy.value, cursor
+        finally:
+            self._x.XFree(img)
 
     def window_info(self, wid: int) -> FocusedWindow | None:
         """Geometry, title and state of any top-level window; None if it is gone."""

@@ -40,9 +40,18 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from . import echo
 from .i18n import _, pkgdata
 
 RATE = 48000
+# Samples of delay that filters add to the voice (at RATE), undone after the chain so the
+# voice stays in sync with the picture and the system sound (tests/test_audio.py checks them).
+FILTER_DELAYS = {
+    "arnndn": 480,            # RNNoise works on 10 ms frames
+    "afftdn": 1200,           # spectral denoise: 25 ms of analysis window
+}
+LIMITER_DELAY = 96            # samples: alimiter's 2 ms attack is a lookahead
+AAC_DELAY = 1024              # samples: the AAC encoder's priming; MP4 skips it (edit list), Matroska does not
 FRAME = 1024                  # analysis frame, samples (21.3 ms at 48 kHz)
 WINDOW = FRAME / RATE         # ...in seconds
 
@@ -636,7 +645,25 @@ def guard_denoise(a: Analysis, src: str, head: list[str], p: Plan) -> float:
     return loss
 
 
-def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: tuple[int, int] = (2, 2)) -> str:
+def _realign(samples: int) -> str:
+    """Drops the first `samples` of a stream: undoes the delay a filter added."""
+    return f"atrim=start_sample={samples},asetpts=PTS-STARTPTS" if samples else ""
+
+
+def _container_delay(dst: str | Path) -> str:
+    """Pre-trims the encoder's priming where the container cannot record it."""
+    return _realign(AAC_DELAY) if str(dst).lower().endswith((".mkv", ".mka", ".webm")) else ""
+
+
+def _append(chain: str, filt: str) -> str:
+    """Adds `filt` at the end of a filter chain or of a graph ending in [out]."""
+    if not filt:
+        return chain
+    return chain[:-5] + f",{filt}[out]" if chain.endswith("[out]") else f"{chain},{filt}"
+
+
+def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: tuple[int, int] = (2, 2),
+                 voice_input: str = "0:a:0") -> str:
     """Final filter: planned stages, then linear loudness normalisation, then the limiter.
 
     With a system sound track (second audio track) this is a filtergraph: the voice
@@ -651,11 +678,15 @@ def render_chain(p: Plan, measured: dict, system_track: bool = False, channels: 
     before = ",".join(s.filter for s in stages if s.name != "limiter")
     limiter = next((s.filter for s in stages if s.name == "limiter"), "")
     # The limiter runs 4x oversampled so that it also catches inter-sample (true) peaks.
-    oversampled = f"aresample={RATE * 4},{limiter},aresample={RATE}" if limiter else f"aresample={RATE}"
+    # Its lookahead (the attack) and the denoisers delay the sound: both are trimmed,
+    # so the voice stays in sync with the picture and with the system sound.
+    oversampled = (f"aresample={RATE * 4},{limiter},aresample={RATE},{_realign(LIMITER_DELAY)}" if limiter
+                   else f"aresample={RATE}")
+    denoise = _realign(sum(d for s in stages for f, d in FILTER_DELAYS.items() if s.filter.startswith(f)))
     if not system_track:
-        return ",".join(x for x in (before, loud, oversampled) if x)
-    voice = ",".join(x for x in (before, loud, f"aresample={RATE}") if x)
-    return (f"[0:a:0]{voice},{_to_stereo(channels[0])}[voice];"
+        return ",".join(x for x in (before, loud, denoise, oversampled) if x)
+    voice = ",".join(x for x in (before, loud, f"aresample={RATE}", denoise) if x)
+    return (f"[{voice_input}]{voice},{_to_stereo(channels[0])}[voice];"
             f"[0:a:1]aresample={RATE},{_to_stereo(channels[1])}[system];"
             f"[voice][system]amix=inputs=2:normalize=0:duration=longest,{oversampled}[out]")
 
@@ -668,7 +699,9 @@ def mixdown(src: str | Path, dst: str | Path, progress: Callable[[str, float], N
     ch = track_channels(src) + [2, 2]
     graph = (f"[0:a:0]aresample={RATE},{_to_stereo(ch[0])}[a];[0:a:1]aresample={RATE},{_to_stereo(ch[1])}[b];"
              f"[a][b]amix=inputs=2:normalize=0:duration=longest,aresample={RATE * 4},"
-             f"alimiter=limit=0.977:attack=2:release=50:level=disabled,aresample={RATE}[out]")
+             f"alimiter=limit=0.977:attack=2:release=50:level=disabled,aresample={RATE},"
+             f"{_realign(LIMITER_DELAY)}[out]")
+    graph = _append(graph, _container_delay(dst))
     _ffmpeg(["-i", str(src), "-map", "0:v?", "-filter_complex", graph, "-map", "[out]", "-c:v", "copy",
              "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
             progress=(lambda f: progress("render", f)) if progress else None, duration=probe_duration(src))
@@ -685,31 +718,42 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
         if progress:
             progress(name, value)
 
+    channels = track_channels(src)
+    system = len(channels) > 1
+    tmp = tempfile.TemporaryDirectory(prefix="rec0-audio-")
+    # With system sound on its own track, its echo is removed from the microphone
+    # first (speakers instead of headphones): the clean voice feeds every pass.
+    voice = src
+    if system and echo.available():
+        step("echo", 0.0)
+        clean = str(Path(tmp.name) / "voice.wav")
+        if echo.cancel(src, clean):
+            voice = clean
     step("analyze", 0.0)
-    a = analyze(src, limit)
+    a = analyze(voice, limit)
     head = ["-t", str(limit)] if limit else []
     if not a.has_audio or a.active_ratio == 0:
         raise AudioError(_("the recording has no usable audio"))
     p = plan(a, target)
     pauses = next((s for s in p.stages if s.name == "pauses" and s.enabled), None)
-    tmp = tempfile.TemporaryDirectory(prefix="rec0-audio-")
     if pauses:
         cmds = Path(tmp.name) / "pauses.cmd"
         cmds.write_text(pause_commands(a, pauses.param))
         pauses.filter = pauses.filter.replace("{pause_commands}", _quote(str(cmds)))
     step("verify", 0.2)
-    guard_denoise(a, src, head, p)
+    guard_denoise(a, voice, head, p)
     step("measure", 0.3)
-    measured = _loudnorm_pass(head + [src], ",".join(s.filter for s in p.stages
+    measured = _loudnorm_pass(head + [voice], ",".join(s.filter for s in p.stages
                                             if s.enabled and s.filter and s.name != "limiter"),
                               p.target_lufs, p.target_tp)
     step("render", 0.4)
-    channels = track_channels(src)
-    system = len(channels) > 1
-    chain = render_chain(p, measured, system, tuple(channels[:2]) if system else (2, 2))
+    second = [*head, "-i", voice] if voice != src else []
+    chain = render_chain(p, measured, system, tuple(channels[:2]) if system else (2, 2),
+                         "1:a:0" if second else "0:a:0")
+    chain = _append(chain, _container_delay(dst))
     audio_args = (["-filter_complex", chain, "-map", "[out]"] if system
                   else ["-map", "0:a:0", "-af", chain])
-    _ffmpeg([*head, "-i", src, "-map", "0:v?", *audio_args, "-c:v", "copy",
+    _ffmpeg([*head, "-i", src, *second, "-map", "0:v?", *audio_args, "-c:v", "copy",
              "-c:a", "aac", "-b:a", "192k", "-ar", str(RATE), "-movflags", "+faststart", dst],
             progress=lambda f: step("render", 0.4 + 0.5 * f), duration=a.duration)
     step("verify", 0.9)

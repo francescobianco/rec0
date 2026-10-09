@@ -130,7 +130,9 @@ def cmd_check(args) -> int:
         report(_("microphone"), lambda: find_microphone(a.microphone) or _("default"))
     if a.desktop:
         print("  ✓ " + _("system sound: monitor of the default output"))
-    report(_("video encoder"), lambda: video_encoder(project.output.video_bitrate, project.fps).split()[0])
+    # The description starts with the input caps: the encoder is the element after them.
+    report(_("video encoder"), lambda: video_encoder(project.output.video_bitrate, project.fps)
+           .split(" ! ")[1].split()[0])
     report(_("audio encoder"), lambda: audio_encoder(project.output.audio_bitrate).split()[0])
     print(_("Output: {path}").format(path=project.output_path()))
     caps.close()
@@ -271,7 +273,8 @@ def cmd_record(args) -> int:
 
 
 def _progress_printer():
-    labels = {"analyze": _("analyzing"), "measure": _("measuring"), "render": _("rendering"),
+    labels = {"echo": _("removing speaker echo"), "analyze": _("analyzing"), "measure": _("measuring"),
+              "render": _("rendering"),
               "verify": _("verifying"), "done": _("done")}
 
     def progress(step, value):

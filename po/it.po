@@ -539,6 +539,9 @@ msgstr "ottimizzazione audio non riuscita, la registrazione originale è stata c
 msgid "analyzing"
 msgstr "analisi"
 
+msgid "removing speaker echo"
+msgstr "rimozione dell'eco delle casse"
+
 msgid "measuring"
 msgstr "misura"
 

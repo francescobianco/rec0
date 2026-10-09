@@ -461,8 +461,9 @@ class Captures:
                     f"! video/x-raw,width={c.width + gl + gr},height={c.height + gt + gb},framerate={self.project.fps}/1")
         if self.backend != "x11":
             return None
-        cursor = "true" if self.project.screen.cursor else "false"
-        return f"ximagesrc xid={win.xid} use-damage=false show-pointer={cursor}"
+        # The pointer is drawn by the recorder (see Recorder._on_pointer_draw): ximagesrc
+        # blends it wrongly and draws a hidden pointer as a grey square.
+        return f"ximagesrc xid={win.xid} use-damage=false show-pointer=false"
 
     def screen_source(self) -> str | None:
         if self.monitor is None:

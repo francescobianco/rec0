@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from rec0 import audio
+from rec0 import audio, echo
 from rec0.audio import Analysis, plan
 
 VOICES = sorted(Path("/usr/share/sounds/alsa").glob("*_*.wav"))
@@ -108,3 +108,88 @@ def test_finalize_keeps_the_original_and_restores_on_failure(tmp_path, noisy_voi
     with pytest.raises(audio.AudioError):
         finalize(p, silent)
     assert silent.exists() and not original_path(silent).exists()
+
+
+def _read(path, track=0):
+    import numpy as np
+    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(path), "-map", f"0:a:{track}", "-ac", "1",
+                          "-ar", "48000", "-f", "f32le", "-"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.float32).astype(float)
+
+
+def _two_tracks(path, voice, system):
+    """A recording like rec0's: microphone on track 0, system sound on track 1."""
+    import numpy as np
+    d = Path(path).parent
+    for name, x in (("t0.f32", voice), ("t1.f32", system)):
+        (d / name).write_bytes(np.asarray(x, np.float32).tobytes())
+    raw = ["-f", "f32le", "-ar", "48000", "-ac", "1", "-i"]
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *raw, str(d / "t0.f32"), *raw, str(d / "t1.f32"),
+                    "-map", "0", "-map", "1", "-c:a", "pcm_f32le", str(path)], check=True)
+
+
+def _lag_ms(a, b):
+    import numpy as np
+    n = min(len(a), len(b))
+    nf = 1 << int(np.ceil(np.log2(2 * n)))
+    c = np.fft.irfft(np.fft.rfft(a[:n], nf) * np.conj(np.fft.rfft(b[:n], nf)), nf)
+    c = np.concatenate([c[-2400:], c[:2401]])
+    return (np.argmax(np.abs(c)) - 2400) / 48
+
+
+@needs_ffmpeg
+@pytest.mark.skipif(not echo.available(), reason="needs numpy")
+def test_speaker_echo_is_removed_from_the_microphone(noisy_voice, tmp_path):
+    import numpy as np
+    voice = _read(noisy_voice.parent / "clean.wav")
+    rng = np.random.default_rng(1)
+    # "Music" from the speakers: noise shaped by a slow envelope.
+    system = np.convolve(rng.standard_normal(len(voice)), np.ones(8) / 8, "same") * 0.1
+    system *= 0.6 + 0.4 * np.sin(np.arange(len(voice)) / 48000 * 2 * np.pi * 0.7)
+    # The room: 18 ms to the microphone, then two reflections.
+    room = np.zeros(4000)
+    room[[864, 1700, 3100]] = [0.5, -0.25, 0.12]
+    bleed = np.convolve(system, room)[:len(voice)]
+    src = tmp_path / "rec.mkv"
+    _two_tracks(src, voice + bleed, system)
+
+    assert echo.cancel(src, tmp_path / "voice.wav")
+    out = _read(tmp_path / "voice.wav")[:len(voice)]
+    residual = out - voice
+    reduction = 10 * np.log10(np.mean(bleed ** 2) / np.mean(residual ** 2))
+    assert reduction > 12, reduction
+    assert np.corrcoef(out, voice)[0, 1] > 0.97
+
+
+@needs_ffmpeg
+def test_processed_voice_stays_in_sync_with_system_sound(noisy_voice, tmp_path):
+    import numpy as np
+    voice = _read(noisy_voice)
+    t = np.arange(len(voice)) / 48000
+    system = 0.02 * np.sin(2 * np.pi * 3000 * t)       # a quiet tone, unrelated to the voice
+    src, out = tmp_path / "rec.mkv", tmp_path / "out.mkv"
+    _two_tracks(src, voice, system)
+    report = audio.process(src, out)
+    assert "denoise" in {s.name for s in report.stages if s.enabled}    # the stage that adds 10 ms
+    mixed = _read(out)
+    # RNNoise's frame, the limiter's lookahead and AAC's priming (not recorded by
+    # Matroska) are compensated. What is left is the high-pass filter's phase shift
+    # at low frequencies, which shows as ~1.5 ms in a cross-correlation.
+    assert abs(_lag_ms(mixed, voice)) <= 2
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("filt", ["arnndn=m={model}", "afftdn=nr=10:nf=-50:tn=1"])
+def test_filter_delays_are_the_ones_compensated(noisy_voice, filt):
+    import numpy as np
+    model = audio._quote(audio.rnnoise_model())
+
+    def run(f):
+        raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(noisy_voice), "-af",
+                              f"aformat=sample_fmts=flt:channel_layouts=mono,aresample=48000,{f}",
+                              "-f", "f32le", "-ac", "1", "-"], capture_output=True, check=True).stdout
+        return np.frombuffer(raw, np.float32).astype(float)
+
+    name = filt.split("=")[0]
+    lag = _lag_ms(run(filt.format(model=model)), run("anull"))
+    assert round(lag * 48) == audio.FILTER_DELAYS[name]
