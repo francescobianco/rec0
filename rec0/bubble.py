@@ -49,7 +49,10 @@ class Bubble:
         self._wake = threading.Event()
 
     def start(self):
-        env = dict(os.environ, GDK_BACKEND="x11")
+        from . import config
+
+        # Same identity as the main window: grouped with rec0 in the dock.
+        env = dict(os.environ, GDK_BACKEND="x11", REC0_APP_ID=config.APP_ID)
         root = str(Path(__file__).resolve().parent.parent)
         env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
         self._proc = subprocess.Popen(
@@ -135,7 +138,7 @@ def main(argv: list[str]) -> int:
     from gi.repository import Gdk, GLib, Gtk
 
     size, x, y = (int(v) for v in argv[:3])
-    GLib.set_prgname("rec0-bubble")
+    GLib.set_prgname(os.environ.get("REC0_APP_ID", "rec0"))
     state = {"surface": None}
 
     win = Gtk.Window(title="rec0")

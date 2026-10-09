@@ -11,5 +11,6 @@ Type=Application
 Categories=GNOME;GTK;AudioVideo;Video;Recorder;
 MimeType=application/yaml;application/x-yaml;
 StartupNotify=true
+StartupWMClass=io.github.francescobianco.Rec0
 DBusActivatable=true
 X-GNOME-UsesNotifications=true

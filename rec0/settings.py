@@ -17,6 +17,7 @@ DEFAULTS = {
     "countdown": 3,
     "process-audio": True,
     "camera-device": "",
+    "mirror-camera": True,
     "microphone-device": "",
 }
 

@@ -69,6 +69,7 @@ class Placement:
 class Camera:
     device: str = "default"          # "default", /dev/videoN, name substring, or "test"
     capture_size: tuple[int, int] | None = None
+    mirror: bool | None = None        # None: the user's preference (on by default)
     closeup: Placement | None = None  # camera scene
     overlay: Placement | None = None  # share scene (None = hidden)
     bubble: Bubble | None = None      # on-screen webcam bubble while recording
@@ -257,6 +258,8 @@ def _camera(raw, canvas, errors) -> Camera | None:
         errors.append(_("camera: must be a mapping, a device name or false"))
         return None
     cam = Camera(device=str(raw.get("device", "default")))
+    if "mirror" in raw:
+        cam.mirror = bool(raw["mirror"])
     if "capture" in raw:
         cam.capture_size = _resolution(raw["capture"], "camera.capture", errors)
     closeup = raw.get("closeup", "fullscreen")
@@ -505,6 +508,7 @@ video:
 # Close-up scene: active while rec0, or any window not listed below, has focus.
 camera:
   device: default            # default, /dev/videoN or part of the device name
+  # mirror: true             # mirrored like a mirror (default: the preference, on)
   closeup: fullscreen        # or {{position: center, width: 70%}}
   overlay:                   # small webcam during the share scene (false to hide it)
     position: bottom-right

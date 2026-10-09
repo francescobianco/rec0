@@ -21,7 +21,7 @@ LINGUAS    := $(shell cat po/LINGUAS)
 MSGFMT     := $(shell command -v msgfmt >/dev/null && echo msgfmt || echo "$(PYTHON) build-aux/msgfmt.py")
 MO_FILES   := $(foreach l,$(LINGUAS),$(BUILD)/locale/$(l)/LC_MESSAGES/rec0.mo)
 
-.PHONY: all build start api test install uninstall pot clean
+.PHONY: all build start dev-desktop api test install uninstall pot clean
 
 all: build
 
@@ -37,9 +37,18 @@ $(BUILD)/locale/%/LC_MESSAGES/rec0.mo: po/%.po
 	$(MSGFMT) -o $@ $<
 
 # Opens examples/dev.yaml (real webcam and microphone) unless ARGS says otherwise.
-start: build
+start: build dev-desktop
 	REC0_PROFILE=development REC0_DEV_API=1 GSETTINGS_SCHEMA_DIR=$(BUILD)/schemas \
 		$(PYTHON) -m rec0 $(or $(ARGS),examples/dev.yaml)
+
+# Lets the shell show rec0's icon (dock, Alt+Tab) for the development instance.
+DEV_DESKTOP := $(HOME)/.local/share/applications/$(APP_ID).Devel.desktop
+
+dev-desktop:
+	@mkdir -p $(dir $(DEV_DESKTOP))
+	@printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=rec0 (Development)' \
+		'Exec=make -C $(CURDIR) start' 'Icon=$(CURDIR)/data/icons/hicolor/scalable/apps/$(APP_ID).svg' \
+		'StartupWMClass=$(APP_ID).Devel' 'Categories=AudioVideo;Video;' 'NoDisplay=true' > $(DEV_DESKTOP)
 
 api:
 	@$(PYTHON) build-aux/devctl.py $(ARGS)
@@ -93,4 +102,4 @@ uninstall:
 	-update-desktop-database -q $(DATADIR)/applications
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) $(DEV_DESKTOP)

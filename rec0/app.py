@@ -261,6 +261,9 @@ class Window(Adw.ApplicationWindow):
             section.append(cam.name, f"win.camera::{cam.id}")
         menu.append_section(_("Webcam"), section)
         section = Gio.Menu()
+        section.append(_("_Mirror"), "win.mirror")
+        menu.append_section(None, section)
+        section = Gio.Menu()
         section.append(_("As Set in the Project"), "win.camera::")
         menu.append_section(None, section)
         return menu
@@ -279,6 +282,14 @@ class Window(Adw.ApplicationWindow):
         section.append(_("As Set in the Project"), "win.microphone::")
         menu.append_section(None, section)
         return menu
+
+    def _on_mirror(self, action: Gio.SimpleAction, value: GLib.Variant):
+        if self.recording or self._countdown:
+            return
+        action.set_state(value)
+        self.settings.set_boolean("mirror-camera", value.get_boolean())
+        if self.project_path:
+            self.load_project(self.project_path)
 
     def _on_device(self, action: Gio.SimpleAction, value: GLib.Variant, key: str):
         if self.recording or self._countdown:
@@ -309,7 +320,11 @@ class Window(Adw.ApplicationWindow):
                                                    GLib.Variant("s", self.settings.get_string(key)))
             action.connect("change-state", self._on_device, key)
             self.add_action(action)
-        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone"):
+        mirror = Gio.SimpleAction.new_stateful("mirror", None,
+                                               GLib.Variant("b", self.settings.get_boolean("mirror-camera")))
+        mirror.connect("change-state", self._on_mirror)
+        self.add_action(mirror)
+        for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone", "mirror"):
             self.lookup_action(name).set_enabled(False)
 
         for action, accels in {
@@ -336,6 +351,8 @@ class Window(Adw.ApplicationWindow):
         camera = self.settings.get_string("camera-device")
         if camera and project.camera and project.camera.device != "test":
             project.camera.device = camera
+        if project.camera and project.camera.mirror is None:
+            project.camera.mirror = self.settings.get_boolean("mirror-camera")
         microphone = self.settings.get_string("microphone-device")
         if microphone and project.audio.microphone != "test":
             project.audio.microphone = None if microphone == "none" else microphone
@@ -356,6 +373,7 @@ class Window(Adw.ApplicationWindow):
         for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone"):
             self.lookup_action(name).set_enabled(True)
         self.lookup_action("camera").set_enabled(project.camera is not None)
+        self.lookup_action("mirror").set_enabled(project.camera is not None)
         self.settings.set_string("last-project", str(path.resolve()))
         # Registered under the application name ("rec0"), used to list recent projects.
         Gtk.RecentManager.get_default().add_item(path.resolve().as_uri())
@@ -493,7 +511,7 @@ class Window(Adw.ApplicationWindow):
         self.status.add_css_class("recording")
         self.timer.remove_css_class("dim-label")
         self.rec_badge.set_visible(True)
-        for name in ("camera", "microphone"):
+        for name in ("camera", "microphone", "mirror"):
             self.lookup_action(name).set_enabled(False)
         self.rec_btn.remove_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-playback-stop-symbolic")
@@ -518,7 +536,7 @@ class Window(Adw.ApplicationWindow):
         self.status.remove_css_class("recording")
         self.timer.add_css_class("dim-label")
         self.rec_badge.set_visible(False)
-        for name in ("camera", "microphone"):
+        for name in ("camera", "microphone", "mirror"):
             self.lookup_action(name).set_enabled(self.project is not None)
         self.rec_btn.add_css_class("rec-idle")
         self.rec_btn.set_icon_name("media-record-symbolic")
@@ -737,6 +755,8 @@ class Window(Adw.ApplicationWindow):
 class Application(Adw.Application):
     def __init__(self, dev_api: bool = False):
         super().__init__(application_id=config.APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        # The window class must match the .desktop file for the shell to show our icon.
+        GLib.set_prgname(config.APP_ID)
         GLib.set_application_name("rec0")
         self.dev_api = dev_api or bool(os.environ.get("REC0_DEV_API"))
         self.api = None

@@ -42,6 +42,11 @@
       <summary>Optimize audio</summary>
       <description>After recording, automatically reduce noise, even out levels and normalize loudness for online video. Projects can also turn it off with audio.processing.</description>
     </key>
+    <key name="mirror-camera" type="b">
+      <default>true</default>
+      <summary>Mirror the webcam</summary>
+      <description>Flip the webcam horizontally, like a mirror, in the video and in the on-screen bubble. A project can override it with camera.mirror.</description>
+    </key>
     <key name="camera-device" type="s">
       <default>""</default>
       <summary>Webcam</summary>
