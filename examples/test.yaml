@@ -1,0 +1,26 @@
+# Progetto di prova: usa sorgenti sintetiche, non serve webcam né schermo.
+project: prova
+
+video:
+  resolution: 1280x720
+  fps: 30
+
+background: "#1e2030"
+
+camera:
+  device: test
+  closeup: {position: center, width: 70%}
+  overlay: {position: bottom-right, width: 240}
+
+screen:
+  monitor: test
+  margin: 32
+
+windows:
+  - match: Firefox
+
+audio:
+  microphone: test
+
+output:
+  directory: /tmp/rec0

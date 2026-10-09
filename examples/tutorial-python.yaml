@@ -1,0 +1,43 @@
+project: tutorial-python
+
+video:
+  resolution: 1920x1080
+  fps: 30
+  transition: 0.3
+
+# Desktop virtuale: colore (#RRGGBB) o immagine (percorso relativo a questo file).
+# Se omesso si usa assets/background.jpg.
+# background: sfondo.jpg
+
+# Primo piano quando rec0 (o una finestra non elencata) ha il focus.
+camera:
+  device: default
+  closeup: fullscreen
+  overlay:
+    position: bottom-right
+    width: 320
+
+# Condivisione quando una di queste finestre ha il focus.
+screen:
+  monitor: primary
+  margin: 40
+
+windows:
+  - match: Firefox                 # tutte le finestre di Firefox
+  - match: "Python 3 documentation"  # solo la tab con questo titolo (qualsiasi browser)
+  - match: gnome-terminal
+
+audio:
+  microphone: default
+  desktop: false
+
+launch:
+  - command: firefox https://docs.python.org/3/
+  - command: gnome-terminal
+    cwd: ~/Develop
+    delay: 1
+
+output:
+  directory: ~/Videos/Tutorial
+  filename: "{project}-{timestamp}.mp4"
+  format: mp4

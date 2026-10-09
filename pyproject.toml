@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rec0"
+version = "0.1.0"
+description = "Project-based video recorder for GNOME: a YAML file describes the whole recording session."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Francesco Bianco", email = "info.francescobianco@gmail.com" }]
+requires-python = ">=3.10"
+# PyGObject, GTK4, Libadwaita and GStreamer come from the system (see README).
+dependencies = ["PyYAML>=5"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+rec0 = "rec0.cli:main"
+
+[tool.setuptools]
+packages = ["rec0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Francesco Bianco -->
+<component type="desktop-application">
+  <id>io.github.francescobianco.Rec0</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>rec0</name>
+  <summary>Record screencasts from declarative projects</summary>
+  <description>
+    <p>
+      rec0 is a declarative, project-based video recorder. A simple YAML project
+      file describes the whole session: open the project, press Record, and start
+      talking. There are no scenes to build by hand: the composition is decided for you.
+    </p>
+    <p>
+      The video is always composed on a virtual desktop background. When one of
+      the windows listed in the project has the focus, it is shown at its real
+      position and size, together with a round webcam bubble; otherwise the video
+      shows a webcam close-up. Windows that are not part of the project never
+      appear in the recording.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Declarative YAML projects that describe sources, windows and output</li>
+      <li>Automatic scenes that follow the window focus, with smooth transitions</li>
+      <li>Windows shown at their real position on a virtual desktop</li>
+      <li>A round, draggable webcam bubble that floats on screen while recording</li>
+      <li>Live preview of the composed video</li>
+      <li>MP4 and MKV output</li>
+      <li>A command line interface for checking projects and recording from the terminal</li>
+    </ul>
+  </description>
+
+  <developer id="io.github.francescobianco">
+    <name translate="no">Francesco Bianco</name>
+  </developer>
+
+  <launchable type="desktop-id">io.github.francescobianco.Rec0.desktop</launchable>
+  <provides>
+    <binary>rec0</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/francescobianco/rec0</url>
+  <url type="bugtracker">https://github.com/francescobianco/rec0/issues</url>
+  <url type="vcs-browser">https://github.com/francescobianco/rec0</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#99c1f1</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <recommends>
+    <display_length compare="ge">768</display_length>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </recommends>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/francescobianco/rec0/main/data/screenshots/main.png</image>
+      <caption>The main window with a project open and the live preview</caption>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-09">
+      <description>
+        <p>First public release of rec0, with declarative projects, automatic scenes, the webcam bubble and a GNOME interface.</p>
+      </description>
+    </release>
+  </releases>
+
+  <translation type="gettext">rec0</translation>
+</component>

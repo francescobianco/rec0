@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="rec0">
+  <schema id="io.github.francescobianco.Rec0" path="/io/github/francescobianco/Rec0/">
+    <key name="window-width" type="i">
+      <default>860</default>
+      <summary>Window width</summary>
+      <description>The width of the main window in pixels.</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>720</default>
+      <summary>Window height</summary>
+      <description>The height of the main window in pixels.</description>
+    </key>
+    <key name="window-maximized" type="b">
+      <default>false</default>
+      <summary>Window maximized</summary>
+      <description>Whether the main window is maximized.</description>
+    </key>
+    <key name="last-project" type="s">
+      <default>""</default>
+      <summary>Last project</summary>
+      <description>The path of the most recently opened project file.</description>
+    </key>
+    <key name="reopen-last-project" type="b">
+      <default>true</default>
+      <summary>Reopen last project</summary>
+      <description>Whether to reopen the most recently used project on startup when no project is given.</description>
+    </key>
+    <key name="show-bubble" type="b">
+      <default>true</default>
+      <summary>Show the webcam bubble on screen while recording</summary>
+      <description>Whether to show a floating round webcam bubble on the screen while recording, which marks where the webcam appears in the video.</description>
+    </key>
+    <key name="countdown" type="i">
+      <range min="0" max="10"/>
+      <default>3</default>
+      <summary>Seconds of countdown before recording starts</summary>
+      <description>The number of seconds to count down before recording starts. Set to 0 to start recording immediately.</description>
+    </key>
+  </schema>
+</schemalist>
