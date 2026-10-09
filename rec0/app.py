@@ -23,10 +23,13 @@ from .recorder import Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
 
 CSS = b"""
-.preview { background: black; border-radius: 12px; }
-/* A layer above the picture (not an outline, which GTK draws under children):
-   the edge is visible on all four sides and follows the rounded corners. */
-.preview-edge { border: 3px solid alpha(black, 0.7); border-radius: 12px; transition: border-color 200ms ease-out; }
+/* The picture is clipped with a larger radius than the edge: a wider curve cuts
+   deeper into the corner, so the picture's anti-aliased corner always falls under
+   the edge band and no pixel shows outside it. */
+.preview { background: black; border-radius: 14px; }
+/* An opaque layer above the picture, not clipped with it (an outline would be
+   drawn under the children). */
+.preview-edge { border: 3px solid shade(@window_bg_color, 0.75); border-radius: 12px; transition: border-color 200ms ease-out; }
 .preview-edge.recording { border-color: #e01b24; }
 .rec-idle { color: @error_color; }
 .timer { font-feature-settings: "tnum"; font-weight: 600; }
@@ -207,15 +210,18 @@ class Window(Adw.ApplicationWindow):
         self.countdown_label = Gtk.Label(css_classes=["countdown"], visible=False)
         self.rec_badge = Gtk.Label(label="● REC", css_classes=["rec-badge"], visible=False,
                                    halign=Gtk.Align.START, valign=Gtk.Align.START, margin_top=12, margin_start=12)
-        overlay = Gtk.Overlay(child=self.picture)
-        overlay.add_overlay(self.countdown_label)
-        overlay.add_overlay(self.rec_badge)
+        inner = Gtk.Overlay(child=self.picture)
+        inner.add_overlay(self.countdown_label)
+        inner.add_overlay(self.rec_badge)
+        clip = Gtk.Box(css_classes=["preview"], overflow=Gtk.Overflow.HIDDEN)
+        inner.set_hexpand(True)
+        clip.append(inner)
+        outer = Gtk.Overlay(child=clip)
         self.preview_edge = Gtk.Box(css_classes=["preview-edge"], can_target=False)
-        overlay.add_overlay(self.preview_edge)
-        self.frame = Gtk.AspectFrame(ratio=16 / 9, obey_child=False, vexpand=True, css_classes=["preview"],
+        outer.add_overlay(self.preview_edge)
+        self.frame = Gtk.AspectFrame(ratio=16 / 9, obey_child=False, vexpand=True,
                                      margin_top=12, margin_start=12, margin_end=12)
-        self.frame.set_overflow(Gtk.Overflow.HIDDEN)
-        self.frame.set_child(overlay)
+        self.frame.set_child(outer)
         box.append(self.frame)
 
         # Media-player style control bar.
@@ -819,6 +825,11 @@ class Application(Adw.Application):
             self.api.start()
 
     def do_shutdown(self):
+        # Stop pipelines and threads before Python unwinds: GStreamer and Xlib
+        # threads calling back into a finalizing interpreter crash the process.
+        for win in self.get_windows():
+            if isinstance(win, Window):
+                win._teardown()
         if self.api:
             self.api.stop()
         Adw.Application.do_shutdown(self)

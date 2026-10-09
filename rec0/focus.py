@@ -33,7 +33,9 @@ class FocusTracker:
 
     def stop(self):
         self._stop.set()
-        self._thread = None
+        thread, self._thread = self._thread, None
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=1)
 
     def _loop(self):
         # Xlib connections must not be shared across threads: this one is ours.
