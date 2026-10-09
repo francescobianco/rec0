@@ -1,0 +1,28 @@
+# Progetto usato da `make start`: webcam e microfono reali, primo piano a tutto schermo.
+project: dev
+
+video:
+  resolution: 1920x1080
+  fps: 30
+
+camera:
+  device: default
+  closeup: fullscreen
+  overlay:
+    position: bottom-right
+    width: 240
+
+screen:
+  monitor: primary
+  margin: 40
+
+windows:
+  - match: chrome
+  - match: firefox
+  - match: gnome-terminal
+
+audio:
+  microphone: default
+
+output:
+  directory: ~/Videos/rec0/dev

@@ -36,9 +36,10 @@ $(BUILD)/locale/%/LC_MESSAGES/rec0.mo: po/%.po
 	@mkdir -p $(dir $@)
 	$(MSGFMT) -o $@ $<
 
+# Opens examples/dev.yaml (real webcam and microphone) unless ARGS says otherwise.
 start: build
 	REC0_PROFILE=development REC0_DEV_API=1 GSETTINGS_SCHEMA_DIR=$(BUILD)/schemas \
-		$(PYTHON) -m rec0 $(ARGS)
+		$(PYTHON) -m rec0 $(or $(ARGS),examples/dev.yaml)
 
 api:
 	@$(PYTHON) build-aux/devctl.py $(ARGS)
