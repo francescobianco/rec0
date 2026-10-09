@@ -172,24 +172,58 @@ def set_audio_processing(path: Path, enabled: bool):
 
 
 def set_audio_option(path: Path, key: str, value: str):
-    """Write audio.<key> into a project file, touching only that line
-    (comments and layout are the user's)."""
+    set_option(path, ("audio", key), value)
+
+
+def set_option(path: Path, keys: tuple[str, ...], value: str) -> bool:
+    """Write a nested option (("camera", "bubble", "size") -> camera.bubble.size)
+    into a project file, touching only the lines it needs (comments and layout
+    are the user's). A section written inline (`bubble: {size: 200}`) is left
+    alone: returns False, and nothing is written."""
     lines = path.read_text().splitlines(keepends=True)
-    audio = next((i for i, l in enumerate(lines) if re.match(r"audio\s*:\s*(#.*)?$", l.rstrip("\n"))), None)
-    if audio is None:
-        lines.append(("" if not lines or lines[-1].endswith("\n") else "\n") + f"\naudio:\n  {key}: {value}\n")
-    else:
-        end = next((i for i in range(audio + 1, len(lines))
-                    if lines[i].strip() and not lines[i].startswith((" ", "\t", "#"))), len(lines))
-        for i in range(audio + 1, end):
-            m = re.match(rf"(\s+{key}\s*:\s*)(\S+)(.*)", lines[i].rstrip("\n"))
-            if m:
-                lines[i] = f"{m[1]}{value}{m[3]}\n"
-                break
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    start, end, indent, step = 0, len(lines), 0, 2   # step: the file's indentation unit
+
+    def content(i):
+        return lines[i].strip() and not lines[i].lstrip().startswith("#")
+
+    def width(line):
+        return len(line) - len(line.lstrip())
+
+    for depth, key in enumerate(keys):
+        last = depth == len(keys) - 1
+        here = next((width(lines[i]) for i in range(start, end) if content(i)), indent)
+        if depth and here > indent - step:
+            step = here - (indent - step)
+        pattern = re.compile(rf"(\s*{re.escape(key)}\s*:[ \t]*)([^#\n]*?)([ \t]*(#.*)?)$")
+        found = next((i for i in range(start, end) if content(i) and width(lines[i]) == here
+                      and pattern.match(lines[i].rstrip("\n"))), None)
+        if last:
+            if found is None:   # first in its section (at the end of the file at top level)
+                lines.insert(start if depth else end, f"{' ' * here}{key}: {value}\n")
+            else:
+                m = pattern.match(lines[found].rstrip("\n"))
+                lines[found] = f"{m[1]}{value}{m[3]}\n"
+            break
+        if found is None:
+            if depth == 0 and end and lines[end - 1].strip():
+                lines.insert(end, "\n")
+                end += 1
+            found = start if depth else end
+            lines.insert(found, f"{' ' * here}{key}:\n")
         else:
-            indent = next((re.match(r"\s+", l)[0] for l in lines[audio + 1:end] if l.strip()), "  ")
-            lines.insert(audio + 1, f"{indent}{key}: {value}\n")
+            m = pattern.match(lines[found].rstrip("\n"))
+            if m[2].strip() in ("true", "{}", "null", "~"):
+                lines[found] = f"{m[1].rstrip()}{m[3]}\n"    # an empty mapping: write it as a block
+            elif m[2].strip():
+                return False
+        start = found + 1
+        end = next((i for i in range(start, len(lines))
+                    if content(i) and width(lines[i]) <= width(lines[found])), len(lines))
+        indent = width(lines[found]) + step
     path.write_text("".join(lines))
+    return True
 
 
 def output_directory(directory: str) -> Path:

@@ -231,12 +231,13 @@ def cmd_record(args) -> int:
     cam = project.camera
     if cam and cam.bubble and captures.monitor and not args.no_bubble:
         from .bubble import Bubble
-        from .project import Rect
+        from .project import Rect, set_option
         from .scenes import bubble_rect
 
         r = bubble_rect(cam.bubble, captures.area or captures.monitor)
         bubble = Bubble(r.width, r.x, r.y,
-                        on_move=lambda x, y, size: director.set_bubble(Rect(x, y, size, size)))
+                        on_move=lambda x, y, size: director.set_bubble(Rect(x, y, size, size)),
+                        on_resize=lambda size: set_option(Path(args.project), ("camera", "bubble", "size"), str(size)))
         rec.on_bubble_frame = bubble.frame
         bubble.start()
         bubble.show()

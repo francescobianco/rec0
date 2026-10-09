@@ -12,6 +12,13 @@ All notable changes to rec0 are documented here. The format follows
   with rec0, tells it which window has the focus. Scenes follow the focus and
   private pages freeze the screen as on X11 (`make shell-extension` installs
   and enables it from the source tree).
+- When the whole screen is shared (Wayland) and its shape differs from the
+  video's (a 16:10 laptop in a 16:9 video), it is framed with rounded corners
+  like a shared window, between the bands of background.
+- The webcam bubble can be resized: hovering it shows a handle in the
+  bottom-right corner, or on the opposite side when the bubble is near the
+  right or bottom edge of the screen. The video overlay follows its size, and
+  the size is saved in the project (`camera.bubble.size`).
 - Back from a private page to a shareable one, the window plays again: it
   stayed frozen on its last frame until it was closed.
 

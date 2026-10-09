@@ -63,8 +63,11 @@ with a short transition:
 - Move or resize a window and it moves in the video too. For browser tabs,
   match on the title: switching tab switches the scene.
 - While recording, a **round webcam bubble** floats on your screen: always on
-  top, draggable, never takes focus. In the share scene the webcam circle in
-  the video sits exactly where the bubble is, so your face never appears twice.
+  top, draggable, never takes focus. Hover it and a handle appears to resize
+  it (bottom-right, or on the opposite side near the screen's edges); the
+  size is saved in the project. In the
+  share scene the webcam circle in the video sits exactly where the bubble is,
+  and has its size, so your face never appears twice.
 - Each shared window is captured on its own, so other windows covering it do
   not end up in the video, and windows you shared stay on the virtual desktop
   when the focus moves on.
@@ -233,7 +236,7 @@ camera:
     shape: circle            # circle or rect (16:9)
     fit: cover               # cover (crop), contain, stretch
   bubble:                    # bubble on screen while recording; false to disable
-    size: 200
+    size: 200                # resizing the bubble on screen saves it here
     position: bottom-right   # where it starts; then drag it anywhere
 
 screen:

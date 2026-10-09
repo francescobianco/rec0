@@ -38,7 +38,8 @@ function describe(win) {
     if (!win)
         return {};
     const r = win.get_frame_rect();
-    const maximized = win.maximized_horizontally && win.maximized_vertically;
+    // is_maximized() replaces the two properties in newer Mutter.
+    const maximized = win.is_maximized?.() ?? (win.maximized_horizontally && win.maximized_vertically);
     return {
         id: new GLib.Variant('t', win.get_id()),
         title: new GLib.Variant('s', win.get_title() ?? ''),
@@ -90,7 +91,13 @@ export default class Rec0Extension extends Extension {
         const type = win?.get_window_type();
         if (type === Meta.WindowType.NORMAL || type === Meta.WindowType.DIALOG) {
             this._window = win;
-            this._windowIds = WINDOW_SIGNALS.map(s => win.connect(s, () => this._changed()));
+            for (const signal of WINDOW_SIGNALS) {
+                try {
+                    this._windowIds.push(win.connect(signal, () => this._changed()));
+                } catch {
+                    // A property this Mutter does not have.
+                }
+            }
             this._windowIds.push(win.connect('unmanaged', () => {
                 this._windowIds = [];
                 this._window = null;

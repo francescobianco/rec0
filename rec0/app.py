@@ -20,7 +20,7 @@ from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
 from .focus import tracker_for  # noqa: E402
 from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
 from .project import (EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio_option,  # noqa: E402
-                      set_audio_processing, template)
+                      set_audio_processing, set_option, template)
 
 PROJECT_MIME = "application/x-rec0-project"
 from .recorder import PREVIEW_FPS, Director, Recorder  # noqa: E402
@@ -750,7 +750,7 @@ class Window(Adw.ApplicationWindow):
             return
         r = bubble_rect(cam.bubble, self.captures.area or self._primary_monitor())
         self.bubble = Bubble(r.width, r.x, r.y, on_move=self._on_bubble_moved,
-                             on_activate=self._on_bubble_activated)
+                             on_activate=self._on_bubble_activated, on_resize=self._on_bubble_resized)
         self.recorder.on_bubble_frame = self.bubble.frame
         self.bubble.start()
         self._update_bubble()
@@ -781,6 +781,14 @@ class Window(Adw.ApplicationWindow):
             self.present_with_time(time)
         else:
             self.present()
+
+    def _on_bubble_resized(self, size: int):
+        # Kept in the project: the next recording starts with this size. While recording
+        # the file monitor does not reload the project, so the loaded one is updated too.
+        cam = self.project.camera if self.project else None
+        if cam and cam.bubble and self.project_path:
+            cam.bubble.size = size
+            set_option(self.project_path, ("camera", "bubble", "size"), str(size))
 
     def _on_bubble_moved(self, x: int, y: int, size: int):
         if self.bubble and self.bubble.visible and self.director:

@@ -92,3 +92,34 @@ def test_privacy_covers_chat_sites_and_desktop_apps():
     assert p.private("capture.pcap", "wireshark Wireshark") is None        # whole class names only
     assert p.private("Meeting", "zoom zoom") is None                       # lifted by allow
     assert p.private("Python docs - Google Chrome") is None
+
+
+@pytest.mark.parametrize("before, after", [
+    # an existing size: only the value changes, the comment stays
+    ("camera:\n  device: test\n  bubble:\n    size: 200   # px\n    position: top-left\nwindows: [a]\n",
+     "camera:\n  device: test\n  bubble:\n    size: 260   # px\n    position: top-left\nwindows: [a]\n"),
+    # a bubble without size
+    ("camera:\n  device: test\n  bubble:\n    position: top-left\n",
+     "camera:\n  device: test\n  bubble:\n    size: 260\n    position: top-left\n"),
+    # no bubble section
+    ("camera:\n  device: test  # webcam\nwindows: [a]\n",
+     "camera:\n  bubble:\n    size: 260\n  device: test  # webcam\nwindows: [a]\n"),
+    # `bubble: true` is an empty mapping
+    ("camera:\n    device: test\n    bubble: true  # on\n",
+     "camera:\n    device: test\n    bubble:  # on\n        size: 260\n"),
+])
+def test_set_option_nested(tmp_path, before, after):
+    from rec0.project import load, set_option
+    f = tmp_path / "p.r0"
+    f.write_text(before)
+    assert set_option(f, ("camera", "bubble", "size"), "260")
+    assert f.read_text() == after
+    assert load(f).camera.bubble.size == 260
+
+
+def test_set_option_leaves_inline_sections_alone(tmp_path):
+    from rec0.project import set_option
+    f = tmp_path / "p.r0"
+    f.write_text("camera:\n  bubble: {size: 200}\n")
+    assert not set_option(f, ("camera", "bubble", "size"), "260")
+    assert f.read_text() == "camera:\n  bubble: {size: 200}\n"

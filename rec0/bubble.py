@@ -8,7 +8,10 @@ pipeline, so frames are streamed to the bubble through its stdin:
     b"S" / b"H"                        show / hide
     b"Q"                               quit
 
-The bubble reports its position on stdout ("x y size") when it is moved.
+The bubble reports its position on stdout ("x y size") when it is moved or
+resized, and "size N" once a resize is over (the project keeps it). Hovering it shows a handle that resizes it: in the bottom-right
+corner, or on the opposite side when the bubble is near the right or bottom
+edge of the screen, so it always has room to grow.
 """
 
 from __future__ import annotations
@@ -25,6 +28,8 @@ from typing import Callable
 
 RING = 0.03   # ring width as a fraction of the diameter, shared with the video mask
 DOUBLE_CLICK_MS = 400
+MIN_SIZE = 80          # px, smallest bubble the handle allows
+MAX_SIZE_RATIO = 0.6   # largest bubble, as a fraction of the screen's short side
 
 
 def draw_ring(cr, d: float):
@@ -35,16 +40,52 @@ def draw_ring(cr, d: float):
     cr.stroke()
 
 
+def handle_corner(x: int, y: int, size: int, area: tuple[int, int, int, int]) -> tuple[int, int]:
+    """(sx, sy) of the resize handle: +1 right/bottom, -1 left/top. It sits on the
+    bottom-right unless the bubble is too close to that edge of the screen (`area`
+    is x, y, width, height) to grow there: then on the opposite side."""
+    ax, ay, aw, ah = area
+    room = size / 2
+    sx = 1 if ax + aw - (x + size) >= room or x - ax < ax + aw - (x + size) else -1
+    sy = 1 if ay + ah - (y + size) >= room or y - ay < ay + ah - (y + size) else -1
+    return sx, sy
+
+
+def handle_center(size: int, corner: tuple[int, int]) -> tuple[float, float, float]:
+    """(cx, cy, radius) of the handle, inside the circle: on screen the video
+    overlay covers the bubble, so the handle never shows in a whole-screen capture."""
+    r = size / 2
+    hr = max(6.0, min(10.0, size * 0.04))
+    k = (r - max(2.0, size * RING) - hr - 3) / math.sqrt(2)
+    return r + corner[0] * k, r + corner[1] * k, hr
+
+
+def resized(start: tuple[int, int, int], corner: tuple[int, int], dx: float, dy: float,
+            area: tuple[int, int, int, int]) -> tuple[int, int, int]:
+    """(x, y, size) after dragging the handle by (dx, dy) from `start` (x, y, size):
+    the corner opposite the handle stays where it is."""
+    x, y, size = start
+    sx, sy = corner
+    limit = max(MIN_SIZE, int(min(area[2], area[3]) * MAX_SIZE_RATIO))
+    new = int(round(size + (dx * sx + dy * sy) / 2))
+    new = max(MIN_SIZE, min(limit, new))
+    nx = x if sx > 0 else x + size - new
+    ny = y if sy > 0 else y + size - new
+    return nx, ny, new
+
+
 # ---------------------------------------------------------------------------
 # Controller, used by the main process
 
 class Bubble:
     def __init__(self, size: int, x: int, y: int, on_move: Callable[[int, int, int], None] | None = None,
-                 on_activate: Callable[[int], None] | None = None):
+                 on_activate: Callable[[int], None] | None = None,
+                 on_resize: Callable[[int], None] | None = None):
         self.size = size
         self.pos = (x, y)
         self.on_move = on_move
         self.on_activate = on_activate   # (X server time) double click, or focus received
+        self.on_resize = on_resize       # (size) the handle was released
         self.visible = False
         self._proc: subprocess.Popen | None = None
         self._queue: queue.Queue = queue.Queue(maxsize=4)
@@ -126,11 +167,15 @@ class Bubble:
                 if self.on_activate:
                     GLib.idle_add(lambda t=t: self.on_activate(t) and False)
                 continue
+            if words[:1] == [b"size"]:
+                if len(words) > 1 and words[1].isdigit() and self.on_resize:
+                    GLib.idle_add(lambda s=int(words[1]): self.on_resize(s) and False)
+                continue
             try:
                 x, y, size = map(int, words)
             except ValueError:
                 continue
-            self.pos = (x, y)
+            self.pos, self.size = (x, y), size
             if self.on_move:
                 GLib.idle_add(lambda: self.on_move(x, y, size) and False)
 
@@ -148,7 +193,7 @@ def main(argv: list[str]) -> int:
 
     size, x, y = (int(v) for v in argv[:3])
     GLib.set_prgname(os.environ.get("REC0_APP_ID", "rec0"))
-    state = {"surface": None}
+    state = {"surface": None, "size": size, "hover": False, "corner": (1, 1), "over_handle": False}
 
     win = Gtk.Window(title="rec0")
     win.set_decorated(False)
@@ -169,9 +214,29 @@ def main(argv: list[str]) -> int:
     win.set_size_request(size, size)
     win.move(x, y)
     win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
-                   | Gdk.EventMask.BUTTON1_MOTION_MASK)
+                   | Gdk.EventMask.POINTER_MOTION_MASK
+                   | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+
+    def work_area() -> tuple[int, int, int, int]:
+        """The usable part of the monitor the bubble is on."""
+        wx, wy = win.get_position()
+        s = state["size"]
+        display = win.get_display()
+        monitor = display.get_monitor_at_point(wx + s // 2, wy + s // 2) or display.get_primary_monitor()
+        r = monitor.get_workarea()
+        return r.x, r.y, r.width, r.height
+
+    def on_handle(px: float, py: float) -> bool:
+        cx, cy, hr = handle_center(state["size"], state["corner"])
+        return (px - cx) ** 2 + (py - cy) ** 2 <= (hr + 4) ** 2   # a little more room than drawn
+
+    def set_cursor(name: str | None):
+        gw = win.get_window()
+        if gw:
+            gw.set_cursor(Gdk.Cursor.new_from_name(win.get_display(), name) if name else None)
 
     def on_draw(_w, cr):
+        size = state["size"]
         cr.set_operator(cairo.OPERATOR_SOURCE)
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
@@ -191,15 +256,52 @@ def main(argv: list[str]) -> int:
         cr.paint()
         cr.restore()
         draw_ring(cr, size)
+        if state["hover"] or click.get("resize"):
+            cx, cy, hr = handle_center(size, state["corner"])
+            cr.arc(cx, cy, hr, 0, 2 * math.pi)
+            cr.set_source_rgba(1, 1, 1, 1 if state["over_handle"] or click.get("resize") else 0.85)
+            cr.fill_preserve()
+            cr.set_line_width(1.5)
+            cr.set_source_rgba(0, 0, 0, 0.35)
+            cr.stroke()
         return True
 
-    click = {"press": None, "release": 0, "dragging": False}
+    click = {"press": None, "release": 0, "dragging": False, "resize": None}
 
     def activate(time: int):
         # The main window comes forward; the click time lets it through focus-stealing prevention.
         print("activate", time, flush=True)
 
+    def resize_to(nx: int, ny: int, new: int):
+        state["size"] = new
+        win.set_size_request(new, new)
+        win.resize(new, new)
+        win.move(nx, ny)
+        if win.get_window():
+            win.get_window().input_shape_combine_region(_circle_region(new), 0, 0)
+        win.queue_draw()
+
+    def on_enter(_w, _ev):
+        if not click["press"]:
+            state["corner"] = handle_corner(*win.get_position(), state["size"], work_area())
+        state["hover"] = True
+        win.queue_draw()
+        return False
+
+    def on_leave(_w, ev):
+        if ev.detail != Gdk.NotifyType.INFERIOR and not click["resize"]:
+            state["hover"] = state["over_handle"] = False
+            set_cursor(None)
+            win.queue_draw()
+        return False
+
     def on_press(_w, ev):
+        if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS and on_handle(ev.x, ev.y):
+            # Resize from the handle: the opposite corner stays put.
+            wx, wy = win.get_position()
+            click["resize"] = ((wx, wy, state["size"]), ev.x_root, ev.y_root, work_area())
+            click["press"] = None
+            return True
         if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
             click["press"] = (ev.x_root, ev.y_root, ev.time)
             click["grab"] = (ev.x, ev.y)          # where the bubble was taken
@@ -209,6 +311,15 @@ def main(argv: list[str]) -> int:
     def on_motion(_w, ev):
         # The window manager does not move dock-type windows: the bubble follows the
         # pointer itself. Only once it really moves: a still click can be a double click.
+        if click["resize"]:
+            start, px, py, area = click["resize"]
+            resize_to(*resized(start, state["corner"], ev.x_root - px, ev.y_root - py, area))
+            return True
+        over = state["hover"] and on_handle(ev.x, ev.y)
+        if over != state["over_handle"]:
+            state["over_handle"] = over
+            set_cursor(("nwse-resize" if state["corner"][0] == state["corner"][1] else "nesw-resize") if over else None)
+            win.queue_draw()
         p = click["press"]
         if not p:
             return True
@@ -220,6 +331,17 @@ def main(argv: list[str]) -> int:
         return True
 
     def on_release(_w, ev):
+        if click["resize"]:
+            if click["resize"][0][2] != state["size"]:
+                print("size", state["size"], flush=True)
+            click["resize"] = None
+            s = state["size"]
+            state["hover"] = (ev.x - s / 2) ** 2 + (ev.y - s / 2) ** 2 <= (s / 2) ** 2   # released outside: hide
+            state["over_handle"] = state["hover"] and on_handle(ev.x, ev.y)
+            if not state["over_handle"]:
+                set_cursor(None)
+            win.queue_draw()
+            return True
         if ev.button == 1 and not click["dragging"]:
             if ev.time - click["release"] < DOUBLE_CLICK_MS:
                 activate(ev.time)
@@ -238,15 +360,17 @@ def main(argv: list[str]) -> int:
 
     def on_configure(_w, ev):
         pos = tuple(win.get_position())
-        if pos != last["pos"]:
-            last["pos"] = pos
-            print(pos[0], pos[1], size, flush=True)
+        if (pos, state["size"]) != (last["pos"], last.get("size")):
+            last["pos"], last["size"] = pos, state["size"]
+            print(pos[0], pos[1], state["size"], flush=True)
         return False
 
     win.connect("draw", on_draw)
     win.connect("button-press-event", on_press)
     win.connect("motion-notify-event", on_motion)
     win.connect("button-release-event", on_release)
+    win.connect("enter-notify-event", on_enter)
+    win.connect("leave-notify-event", on_leave)
     # Should it get focus anyway (e.g. from the dock), hand it to the main window.
     win.connect("focus-in-event", lambda *_: activate(Gtk.get_current_event_time()) or False)
     GLib.timeout_add(1000, raise_above)   # stay above windows that raise themselves

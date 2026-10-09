@@ -3,5 +3,5 @@
   "name": "rec0",
   "description": "Lets rec0 follow the focused window on Wayland, so scenes switch on their own while you record.",
   "url": "https://github.com/francescobianco/rec0",
-  "shell-version": ["45", "46", "47", "48", "49"]
+  "shell-version": ["45", "46", "47", "48"]
 }

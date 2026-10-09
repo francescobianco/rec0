@@ -46,10 +46,20 @@ def screen_area(project: Project, area: Rect) -> tuple[float, float, float, floa
     """
     m = project.screen.margin
     tw, th = project.width - 2 * m, project.height - 2 * m
-    if abs((area.width / area.height) / (tw / th) - 1) <= FILL_STRETCH_MAX:
+    if fills(project, area):
         return tw / area.width, th / area.height, m, m
-    k = min(tw / area.width, th / area.height)
+    # Fitted, with bands of background: room is left for the frame around the screen
+    # (one pixel more: screen_layer rounds that room up to whole captured pixels).
+    room = WINDOW_EDGE + 1
+    k = min((tw - 2 * room) / area.width, (th - 2 * room) / area.height)
     return k, k, (project.width - area.width * k) / 2, (project.height - area.height * k) / 2
+
+
+def fills(project: Project, area: Rect) -> bool:
+    """Whether the usable area fills the canvas (stretched a little at most)."""
+    m = project.screen.margin
+    tw, th = project.width - 2 * m, project.height - 2 * m
+    return abs((area.width / area.height) / (tw / th) - 1) <= FILL_STRETCH_MAX
 
 
 def to_canvas(project: Project, area: Rect, rect: Rect) -> Rect:
@@ -92,6 +102,19 @@ def window_layer(project: Project, area: Rect, content: Rect,
     return Layer(rect, 1.0, crop, pad, radius)
 
 
+def screen_layer(project: Project, area: Rect) -> Layer:
+    """Layer for the whole screen captured at once (Wayland). When it does not fill
+    the canvas it is framed like a window, in the room screen_area() leaves for it."""
+    sx, sy, ox, oy = screen_area(project, area)
+    if fills(project, area):
+        return Layer(Rect(round(ox), round(oy), round(area.width * sx), round(area.height * sy)), 1.0)
+    pad = WINDOW_EDGE / sx
+    grow = int(pad + 0.999)
+    rect = Rect(round(ox - grow * sx), round(oy - grow * sy),
+                round((area.width + 2 * grow) * sx), round((area.height + 2 * grow) * sy))
+    return Layer(rect, 1.0, (-grow,) * 4, pad, WINDOW_RADIUS / sx)
+
+
 @dataclass(frozen=True)
 class Shown:
     """A window in the presentation, as the scene composer needs it."""
@@ -100,6 +123,7 @@ class Shown:
     shadow: tuple[int, int, int, int] = (0, 0, 0, 0)
     fullscreen: bool = False
     visible: bool = True     # revealed (past the privacy delay) and not minimized
+    screen: bool = False     # the whole screen, not a window (see screen_layer)
 
 
 def compose(project: Project, scene: str, area: Rect | None, windows: list[Shown],
@@ -122,7 +146,8 @@ def compose(project: Project, scene: str, area: Rect | None, windows: list[Shown
     before = dict(previous.windows) if previous else {}
     if area is not None:
         for w in windows:
-            layer = window_layer(project, area, w.content, w.shadow, w.fullscreen)
+            layer = (screen_layer(project, area) if w.screen
+                     else window_layer(project, area, w.content, w.shadow, w.fullscreen))
             if layer is None:
                 continue
             if scene != "share" or not w.visible:

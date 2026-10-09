@@ -38,7 +38,7 @@ from .capture import Captures, background_description, find_microphone, frame_rg
 from .focus import FocusedWindow  # noqa: E402
 from .project import Project  # noqa: E402
 from .project import Rect  # noqa: E402
-from .scenes import Frame, Shown, compose, interpolate, window_layer  # noqa: E402
+from .scenes import Frame, Shown, compose, interpolate, screen_layer, window_layer  # noqa: E402
 
 Gst.init(None)
 
@@ -902,7 +902,7 @@ class Director:
         out = []
         for key, w in self.windows.items():
             if key == self.SCREEN_KEY:
-                out.append(Shown(key, self.area, fullscreen=True, visible=key in self.revealed))
+                out.append(Shown(key, self.area, fullscreen=True, visible=key in self.revealed, screen=True))
             else:
                 out.append(Shown(key, w.area, w.shadow, w.fullscreen, key in self.revealed and not w.hidden))
         return out
@@ -991,7 +991,7 @@ class Director:
             return
         if key not in self.windows:
             layer = (window_layer(self.project, self.area, info.area, info.shadow, info.fullscreen)
-                     if key != self.SCREEN_KEY else None)
+                     if key != self.SCREEN_KEY else screen_layer(self.project, self.area))
             self.recorder.add_window(key, source, layer.crop if layer else None)
             self._reveal_later(key)
         self.windows.pop(key, None)

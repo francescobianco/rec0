@@ -1,5 +1,5 @@
 from rec0.project import Rect, parse
-from rec0.scenes import Shown, bubble_rect, compose, interpolate, to_canvas, window_layer
+from rec0.scenes import Shown, bubble_rect, compose, interpolate, screen_layer, to_canvas, window_layer
 
 MONITOR = Rect(0, 0, 1920, 1080)
 WORK = Rect(0, 32, 1920, 1048)   # GNOME's top bar takes the first 32 px
@@ -28,7 +28,25 @@ def test_window_without_shadows_gets_transparent_room_for_the_frame():
 def test_large_aspect_mismatch_is_fitted_without_distortion():
     p = project(screen={"margin": 108})
     layer = window_layer(p, MONITOR, MONITOR, fullscreen=True)
-    assert layer.rect == Rect(192, 108, 1536, 864) and layer.edge == 0
+    # Fitted undistorted, leaving room for the frame on every side.
+    assert layer.rect == Rect(199, 112, 1522, 856) and layer.edge == 0
+
+
+def test_whole_screen_with_bands_is_framed_like_a_window():
+    laptop = Rect(0, 0, 1920, 1200)                    # 16:10 screen, 16:9 video
+    layer = screen_layer(project(), laptop)
+    r = layer.rect
+    assert r.x > 90 and r.x + r.width < 1830              # bands of background left and right
+    assert r.y >= 0 and r.y + r.height <= 1080            # the frame stays inside the video
+    assert layer.crop == (-4, -4, -4, -4) and layer.edge > 0 and layer.radius > 0
+    # The screen's content (inside the frame) is where to_canvas puts it: the bubble overlay matches.
+    c = to_canvas(project(), laptop, laptop)
+    assert abs(c.x - r.x - 4 * c.width / 1920) < 1 and abs(c.y - r.y - 4 * c.height / 1200) < 1
+
+
+def test_whole_screen_that_fills_the_video_is_bare():
+    layer = screen_layer(project(), MONITOR)
+    assert layer.rect == Rect(0, 0, 1920, 1080) and layer.crop is None and layer.edge == 0
 
 
 def test_work_area_corners_are_canvas_corners():
