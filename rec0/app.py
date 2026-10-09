@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -197,7 +198,8 @@ class Window(Adw.ApplicationWindow):
     def _build_main(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
-        self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN, can_shrink=True)
+        # Same aspect as the frame: COVER only trims sub-pixel rounding instead of leaving a gap.
+        self.picture = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True)
         self.countdown_label = Gtk.Label(css_classes=["countdown"], visible=False)
         self.rec_badge = Gtk.Label(label="● REC", css_classes=["rec-badge"], visible=False,
                                    halign=Gtk.Align.START, valign=Gtk.Align.START, margin_top=12, margin_start=12)
@@ -418,12 +420,15 @@ class Window(Adw.ApplicationWindow):
     def _fit_to_preview(self):
         if self.is_maximized() or self.is_fullscreen() or not self.frame.get_mapped():
             return False
-        ratio = self.frame.get_ratio()
         extra_w = self.get_width() - self.frame.get_width()
         extra_h = self.get_height() - self.frame.get_height()
-        width = self.get_width()
-        height = extra_h + round((width - extra_w) / ratio)
-        if abs(height - self.get_height()) > 1:
+        # Preview width as a multiple of the aspect ratio's terms (16 for 16:9), so
+        # the height is a whole number of pixels: no 1 px line from rounding.
+        g = math.gcd(self.project.width, self.project.height)
+        rw, rh = self.project.width // g, self.project.height // g
+        units = max(1, (self.get_width() - extra_w) // rw)
+        width, height = extra_w + units * rw, extra_h + units * rh
+        if (width, height) != (self.get_width(), self.get_height()):
             self.set_default_size(width, height)
         return False
 
