@@ -26,7 +26,8 @@ CSS = b"""
 .preview { background: black; border-radius: 12px; }
 /* A layer above the picture (not an outline, which GTK draws under children):
    the edge is visible on all four sides and follows the rounded corners. */
-.preview-edge { border: 1px solid alpha(black, 0.5); border-radius: 12px; }
+.preview-edge { border: 3px solid alpha(black, 0.7); border-radius: 12px; transition: border-color 200ms ease-out; }
+.preview-edge.recording { border-color: #e01b24; }
 .rec-idle { color: @error_color; }
 .timer { font-feature-settings: "tnum"; font-weight: 600; }
 .recording { color: @error_color; }
@@ -209,7 +210,8 @@ class Window(Adw.ApplicationWindow):
         overlay = Gtk.Overlay(child=self.picture)
         overlay.add_overlay(self.countdown_label)
         overlay.add_overlay(self.rec_badge)
-        overlay.add_overlay(Gtk.Box(css_classes=["preview-edge"], can_target=False))
+        self.preview_edge = Gtk.Box(css_classes=["preview-edge"], can_target=False)
+        overlay.add_overlay(self.preview_edge)
         self.frame = Gtk.AspectFrame(ratio=16 / 9, obey_child=False, vexpand=True, css_classes=["preview"],
                                      margin_top=12, margin_start=12, margin_end=12)
         self.frame.set_overflow(Gtk.Overflow.HIDDEN)
@@ -527,6 +529,7 @@ class Window(Adw.ApplicationWindow):
         self.status.add_css_class("recording")
         self.timer.remove_css_class("dim-label")
         self.rec_badge.set_visible(True)
+        self.preview_edge.add_css_class("recording")
         for name in ("camera", "microphone", "mirror"):
             self.lookup_action(name).set_enabled(False)
         self.rec_btn.remove_css_class("rec-idle")
@@ -552,6 +555,7 @@ class Window(Adw.ApplicationWindow):
         self.status.remove_css_class("recording")
         self.timer.add_css_class("dim-label")
         self.rec_badge.set_visible(False)
+        self.preview_edge.remove_css_class("recording")
         for name in ("camera", "microphone", "mirror"):
             self.lookup_action(name).set_enabled(self.project is not None)
         self.rec_btn.add_css_class("rec-idle")
