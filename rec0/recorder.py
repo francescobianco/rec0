@@ -23,6 +23,9 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
+gi.require_version("GstController", "1.0")
+from gi.repository import GstController  # noqa: E402
+
 gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
@@ -45,6 +48,7 @@ CAMERA_Z = 1000                 # above every window layer
 # when focus moves to a private page the screen layer is frozen before any of
 # its frames can be composed (focus is polled every 100 ms).
 SCREEN_DELAY = 0.4
+OUTRO = 0.7                     # s of the closing (CRT power-off)
 BUBBLE_FPS = 20
 
 
@@ -94,6 +98,9 @@ class Recorder:
         self.recording = False
         self.frame: Frame | None = None
         self.begun = False
+        self._outro = None
+        self._eos_sent = False
+        self._outro_size = (0, 0)
         self._warmup = False
         self._t0 = 0
         self._stopping = False
@@ -157,7 +164,8 @@ class Recorder:
         parts.insert(0,
             f"compositor name=mix background=black ignore-inactive-pads=true "
             f"latency={int((SCREEN_DELAY + 0.1) * Gst.SECOND) if p.windows else 0} {' '.join(pads)} "
-            f"! video/x-raw,format=AYUV,width={p.width},height={p.height},framerate={fps}/1 ! tee name=vt")
+            f"! video/x-raw,format=BGRA,width={p.width},height={p.height},framerate={fps}/1 "
+            f"! cairooverlay name=outro ! tee name=vt")
 
         if preview:
             pw = min(PREVIEW_WIDTH, p.width)
@@ -211,7 +219,8 @@ class Recorder:
         if not inputs:
             return []
         gate = "valve name=arec drop=true drop-mode=forward-sticky-events ! " if encode else ""
-        out = f"{gate}audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
+        fade = "volume name=outrovol ! " if encode else ""   # faded out with the closing
+        out = f"{fade}{gate}audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
         if len(inputs) == 1:
             # A single input needs no mixer. audiomixer drops and resyncs buffers that
             # arrive late for its deadline (measured: thousands of 10 ms cuts in the
@@ -364,6 +373,9 @@ class Recorder:
         self.output = output
         self.recording = output is not None
         self.begun = False
+        self._outro = None
+        self._eos_sent = False
+        self._outro_size = (self.project.width, self.project.height)
         self._warmup = warmup
         self._t0 = 0
         self._stopping = False
@@ -380,6 +392,10 @@ class Recorder:
         bubblesink = self.pipeline.get_by_name("bubblesink")
         if bubblesink is not None:
             bubblesink.connect("new-sample", self._on_bubble_sample)
+        outro = self.pipeline.get_by_name("outro")
+        if outro is not None:
+            outro.connect("caps-changed", self._on_outro_caps)
+            outro.connect("draw", self._on_outro_draw)
         mask = self.pipeline.get_by_name("cammask")
         if mask is not None:
             mask.connect("caps-changed", self._on_mask_caps)
@@ -407,6 +423,34 @@ class Recorder:
                 output.unlink()
             return
         if self.recording:
+            self._start_outro()
+        else:
+            self._finish()
+
+    def _start_outro(self):
+        """Close the video with a short CRT power-off, then end the file.
+
+        The effect is pinned to the timeline at "now": video frames with later
+        timestamps (they reach the compositor SCREEN_DELAY later) collapse to a
+        line, then to a point, then to black, and the audio fades out over the
+        same timestamps. The file ends on black, never on the bare background.
+        """
+        clock = self.pipeline.get_clock()
+        now = clock.get_time() - self.pipeline.get_base_time() if clock else 0
+        self._outro = {"t0": now, "done": False}
+        vol = self.pipeline.get_by_name("outrovol")
+        if vol is not None:
+            cs = GstController.InterpolationControlSource()
+            cs.set_property("mode", GstController.InterpolationMode.LINEAR)
+            vol.add_control_binding(GstController.DirectControlBinding.new_absolute(vol, "volume", cs))
+            cs.set(now, 1.0)
+            cs.set(now + int(OUTRO * Gst.SECOND), 0.0)
+        # If no frame ever arrives to play it, end anyway.
+        GLib.timeout_add(int((OUTRO + SCREEN_DELAY) * 1000) + 1500, self._end_recording)
+
+    def _end_recording(self):
+        if self.pipeline and self.recording and not self._eos_sent:
+            self._eos_sent = True
             self.pipeline.send_event(Gst.Event.new_eos())
             # imagefreeze ignores EOS from its (already finished) source: end it by hand.
             freeze = self.pipeline.get_by_name("bgfreeze")
@@ -417,8 +461,67 @@ class Recorder:
                 b["freeze"].get_static_pad("src").push_event(Gst.Event.new_eos())
             # Safety net: never hang forever if a source ignores EOS.
             GLib.timeout_add_seconds(10, self._force_stop)
-        else:
-            self._finish()
+        return False
+
+    def _on_outro_caps(self, _overlay, caps):
+        st = caps.get_structure(0)
+        self._outro_size = (st.get_value("width"), st.get_value("height"))
+
+    def _on_outro_draw(self, _overlay, cr, ts, _dur):
+        o = self._outro
+        if not o or ts < o["t0"]:
+            return
+        w, h = self._outro_size
+        p = (ts - o["t0"]) / (OUTRO * Gst.SECOND)
+        if p >= 1:
+            cr.set_operator(cairo.OPERATOR_SOURCE)
+            cr.set_source_rgb(0, 0, 0)
+            cr.paint()
+            if not o["done"]:
+                o["done"] = True
+                GLib.idle_add(self._end_recording)
+            return
+        # The picture as it is, then black, then the picture squeezed around the centre.
+        target = cr.get_target()
+        target.flush()
+        snap = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+        c2 = cairo.Context(snap)
+        c2.set_source_surface(target)
+        c2.paint()
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgb(0, 0, 0)
+        cr.paint()
+        line = max(2.0 / h, 0.003)
+        if p < 0.55:      # vertical collapse to a line, brightening
+            q = p / 0.55
+            sx, sy, glow = 1.0, 1 - (1 - line) * q ** 2.2, 0.3 * q ** 2
+        elif p < 0.85:    # the line shrinks to a point
+            q = (p - 0.55) / 0.30
+            sx, sy, glow = max(0.004, 1 - q ** 1.6), line, 0.3 + 0.6 * q
+        else:             # the point fades
+            sx, sy, glow = 0.004, line, 1.0
+        fade = 1.0 if p < 0.85 else 1 - (p - 0.85) / 0.15
+        cr.save()
+        cr.translate(w / 2, h / 2)
+        cr.scale(sx, sy)
+        cr.translate(-w / 2, -h / 2)
+        cr.set_operator(cairo.OPERATOR_OVER)
+        cr.set_source_surface(snap)
+        cr.paint_with_alpha(fade)
+        cr.set_operator(cairo.OPERATOR_ADD)
+        cr.set_source_rgba(1, 1, 1, glow * fade)
+        cr.rectangle(0, 0, w, h)
+        cr.fill()
+        cr.restore()
+        # A soft glow around the collapsing light.
+        r = max(w * sx, h * 0.02) * 0.6
+        g = cairo.RadialGradient(w / 2, h / 2, 0, w / 2, h / 2, r)
+        g.add_color_stop_rgba(0, 1, 1, 1, 0.18 * glow * fade)
+        g.add_color_stop_rgba(1, 1, 1, 1, 0)
+        cr.set_operator(cairo.OPERATOR_ADD)
+        cr.set_source(g)
+        cr.arc(w / 2, h / 2, r, 0, 2 * math.pi)
+        cr.fill()
 
     def begin(self):
         """End of the warm-up: the recording starts now, at timestamp zero.
