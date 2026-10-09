@@ -27,6 +27,7 @@ install_data('icons/hicolor/scalable/apps/' + app_id + '.svg',
 install_data('icons/hicolor/symbolic/apps/' + app_id + '-symbolic.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'symbolic' / 'apps')
 install_data('../assets/background.jpg', install_dir: pkgdatadir)
+install_data('../assets/rnnoise/sh.rnnn', install_dir: pkgdatadir / 'rnnoise')
 
 desktop_validate = find_program('desktop-file-validate', required: false)
 if desktop_validate.found()

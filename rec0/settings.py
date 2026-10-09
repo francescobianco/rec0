@@ -15,6 +15,7 @@ DEFAULTS = {
     "reopen-last-project": True,
     "show-bubble": True,
     "countdown": 3,
+    "process-audio": True,
     "camera-device": "",
     "microphone-device": "",
 }

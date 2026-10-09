@@ -171,6 +171,9 @@ class DevApi:
                         "rect": list(focused.rect.__dict__.values())} if focused else None,
             "bubble": {"visible": win.bubble.visible, "pos": win.bubble.pos} if win.bubble else None,
             "last_recording": str(win.last_recording) if win.last_recording else None,
+            "processing": str(win.processing) if win.processing else None,
+            "last_audio_report": {"stages": [s.name for s in win.last_report.stages if s.enabled],
+                                  "result": win.last_report.result} if win.last_report else None,
             "settings": {k: win.settings.get_value(k).unpack() if hasattr(win.settings.get_value(k), "unpack")
                          else win.settings.get_value(k)
                          for k in ("countdown", "show-bubble", "reopen-last-project", "last-project")},

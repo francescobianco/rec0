@@ -1,10 +1,12 @@
 rec0/app.py
+rec0/audio.py
 rec0/bubble.py
 rec0/capture.py
 rec0/cli.py
 rec0/devapi.py
 rec0/focus.py
 rec0/i18n.py
+rec0/postprocess.py
 rec0/privacy.py
 rec0/project.py
 rec0/recorder.py

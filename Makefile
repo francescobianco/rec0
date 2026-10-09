@@ -57,6 +57,7 @@ install: build
 	    -e 's|^PKGDATADIR = None|PKGDATADIR = "$(PKGDATADIR)"|' \
 	    rec0/config.py > $(PKGDATADIR)/rec0/config.py
 	install -m 644 assets/background.jpg $(PKGDATADIR)/background.jpg
+	install -Dm 644 assets/rnnoise/sh.rnnn $(PKGDATADIR)/rnnoise/sh.rnnn
 	sed -e 's|@PYTHON@|$(PYTHON)|' -e 's|@pkgdatadir@|$(PKGDATADIR)|' build-aux/rec0.in > $(BINDIR)/rec0
 	chmod 755 $(BINDIR)/rec0
 	install -Dm 644 data/$(APP_ID).desktop.in $(DATADIR)/applications/$(APP_ID).desktop

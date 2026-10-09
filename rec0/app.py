@@ -12,6 +12,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 from . import config, settings  # noqa: E402
+from . import audio, postprocess  # noqa: E402
 from .bubble import Bubble  # noqa: E402
 from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
 from .focus import FocusTracker  # noqa: E402
@@ -101,6 +102,8 @@ class Window(Adw.ApplicationWindow):
         self.file_monitor: Gio.FileMonitor | None = None
         self.bubble: Bubble | None = None
         self.last_recording: Path | None = None
+        self.last_report = None          # audio.Report of the last processed recording
+        self.processing: Path | None = None
         self._close_after_stop = False
         self._timer = None
         self._countdown = None
@@ -148,6 +151,7 @@ class Window(Adw.ApplicationWindow):
         section.append(_("_New Project…"), "win.new")
         section.append(_("_Edit Project File"), "win.edit")
         section.append(_("Show _Recordings"), "win.show-recordings")
+        section.append(_("Last _Audio Report"), "win.audio-report")
         menu.append_section(None, section)
         section = Gio.Menu()
         section.append(_("_Preferences"), "app.preferences")
@@ -290,6 +294,7 @@ class Window(Adw.ApplicationWindow):
             "record": lambda *_: self.toggle_record(), "show-recordings": lambda *_: self._open_folder(),
             "close": lambda *_: self.close(), "show-help-overlay": lambda *_: self._show_shortcuts(),
             "open-last-recording": lambda *_: self._open_last_recording(),
+            "audio-report": lambda *_: self._show_audio_report(),
         }
         for name, cb in simple.items():
             action = Gio.SimpleAction.new(name, None)
@@ -513,20 +518,62 @@ class Window(Adw.ApplicationWindow):
         self._set_idle_ui()
         self.last_recording = path
         self.get_application().log(f"saved {path}")
-        Gtk.RecentManager.get_default().add_item(path.as_uri())
         if self._close_after_stop:
             self.close()
             return
-        self.toasts.add_toast(Adw.Toast(
-            title=GLib.markup_escape_text(_("Saved {name}").format(name=path.name)),
-            button_label=_("_Play"), action_name="win.open-last-recording", timeout=8))
+        self._start_preview()
+        if self.project.audio.processing and self.settings.get_boolean("process-audio") and audio.available():
+            self._process_audio(path)
+        else:
+            self._announce(path)
+
+    def _process_audio(self, path: Path):
+        self.processing = path
+        self.status.set_label(_("Optimizing audio…"))
+
+        def progress(_step, value):
+            if self.processing == path:
+                self.status.set_label(_("Optimizing audio… {pct:.0%}").format(pct=value))
+
+        def done(report, error):
+            self.processing = None
+            self.status.set_label(_("Ready") if not self.recording else _("Recording"))
+            if error:
+                self.get_application().log(f"audio processing failed: {error}")
+                self.toast(_("Audio optimization failed, the original recording was kept: {error}").format(error=error))
+            else:
+                self.last_report = report
+                self.get_application().log("audio: " + "; ".join(
+                    f"{s.name} ({s.reason})" for s in report.stages if s.enabled))
+            self._announce(path, report)
+
+        postprocess.finalize_async(self.project, path, progress, done)
+
+    def _announce(self, path: Path, report=None):
+        Gtk.RecentManager.get_default().add_item(path.as_uri())
+        title = _("Saved {name}").format(name=path.name)
+        if report:
+            title = _("Saved {name}, audio at {lufs:.0f} LUFS").format(
+                name=path.name, lufs=report.result["integrated_lufs"])
+        toast = Adw.Toast(title=GLib.markup_escape_text(title), button_label=_("_Play"),
+                          action_name="win.open-last-recording", timeout=8)
+        self.toasts.add_toast(toast)
         if not self.is_active():
             note = Gio.Notification.new(_("Recording Saved"))
             note.set_body(path.name)
             note.set_default_action_and_target("app.play", GLib.Variant("s", str(path)))
             note.add_button_with_target(_("Show in Folder"), "app.show-file", GLib.Variant("s", str(path)))
             self.get_application().send_notification("recording-saved", note)
-        self._start_preview()
+
+    def _show_audio_report(self):
+        r = self.last_report
+        if r is None:
+            return
+        lines = [("● " if s.enabled else "○ ") + f"{s.name}: {s.reason}" for s in r.stages]
+        body = "\n".join(lines) + "\n\n" + _(
+            "Result: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, loudness range {lra:.1f} LU").format(
+            lufs=r.result["integrated_lufs"], tp=r.result["true_peak_dbtp"], lra=r.result["loudness_range_lu"])
+        self.alert(_("Audio Optimization"), body)
 
     def _open_last_recording(self):
         if self.last_recording:
@@ -772,6 +819,12 @@ class Application(Adw.Application):
                                active=s.get_boolean("show-bubble"))
         bubble.connect("notify::active", lambda r, _p: s.set_boolean("show-bubble", r.get_active()))
         group.add(bubble)
+        optimize = Adw.SwitchRow(title=_("Optimize Audio"),
+                                 subtitle=_("Reduce noise, even out levels and set the loudness for online video "
+                                            "after recording; the original is kept"),
+                                 active=s.get_boolean("process-audio"))
+        optimize.connect("notify::active", lambda r, _p: s.set_boolean("process-audio", r.get_active()))
+        group.add(optimize)
         page.add(group)
         group = Adw.PreferencesGroup(title=_("Projects"))
         reopen = Adw.SwitchRow(title=_("Reopen Last Project"), subtitle=_("Open the last used project at startup"),

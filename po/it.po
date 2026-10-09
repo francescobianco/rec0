@@ -74,6 +74,9 @@ msgstr "_Modifica il file del progetto"
 msgid "Show _Recordings"
 msgstr "Mostra le _registrazioni"
 
+msgid "Last _Audio Report"
+msgstr "Ultimo _report audio"
+
 msgid "_Preferences"
 msgstr "_Preferenze"
 
@@ -95,23 +98,29 @@ msgstr "_Apri progetto…"
 msgid "Recent Projects"
 msgstr "Progetti recenti"
 
-msgid "Automatic"
-msgstr "Automatica"
-
-msgid "Close-up"
-msgstr "Primo piano"
-
-msgid "Share"
-msgstr "Condivisione"
+msgid "Start Recording"
+msgstr "Avvia la registrazione"
 
 msgid "Ready"
 msgstr "Pronto"
 
+msgid "Webcam"
+msgstr "Webcam"
+
+msgid "Microphone"
+msgstr "Microfono"
+
 msgid "Microphone Level"
 msgstr "Livello del microfono"
 
-msgid "Start Recording"
-msgstr "Avvia la registrazione"
+msgid "As Set in the Project"
+msgstr "Come nel progetto"
+
+msgid "Default Input"
+msgstr "Ingresso predefinito"
+
+msgid "No Audio"
+msgstr "Nessun audio"
 
 msgid "Stop recording before changing project"
 msgstr "Ferma la registrazione prima di cambiare progetto"
@@ -149,8 +158,20 @@ msgstr "Ferma la registrazione"
 msgid "Saving…"
 msgstr "Salvataggio…"
 
+msgid "Optimizing audio…"
+msgstr "Ottimizzazione audio…"
+
+msgid "Optimizing audio… {pct:.0%}"
+msgstr "Ottimizzazione audio… {pct:.0%}"
+
+msgid "Audio optimization failed, the original recording was kept: {error}"
+msgstr "Ottimizzazione audio non riuscita, la registrazione originale è stata conservata: {error}"
+
 msgid "Saved {name}"
 msgstr "Salvato {name}"
+
+msgid "Saved {name}, audio at {lufs:.0f} LUFS"
+msgstr "Salvato {name}, audio a {lufs:.0f} LUFS"
 
 msgid "_Play"
 msgstr "_Riproduci"
@@ -161,8 +182,11 @@ msgstr "Registrazione salvata"
 msgid "Show in Folder"
 msgstr "Mostra nella cartella"
 
-msgid "Scene: {scene}"
-msgstr "Scena: {scene}"
+msgid "Result: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, loudness range {lra:.1f} LU"
+msgstr "Risultato: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, gamma di loudness {lra:.1f} LU"
+
+msgid "Audio Optimization"
+msgstr "Ottimizzazione audio"
 
 msgid "tutorial"
 msgstr "tutorial"
@@ -191,11 +215,104 @@ msgstr "Bolla della webcam"
 msgid "Show your webcam on screen while recording, when rec0 is not focused"
 msgstr "Mostra la webcam sullo schermo durante la registrazione, quando rec0 non è in primo piano"
 
+msgid "Optimize Audio"
+msgstr "Ottimizza l'audio"
+
+msgid "Reduce noise, even out levels and set the loudness for online video after recording; the original is kept"
+msgstr "Dopo la registrazione riduce il rumore, uniforma i livelli e imposta la loudness per i video online; l'originale viene conservato"
+
 msgid "Open the last used project at startup"
 msgstr "Apre all'avvio l'ultimo progetto usato"
 
 msgid "Reopen Last Project"
 msgstr "Riapri l'ultimo progetto"
+
+msgid "{ratio:.3%} of samples clipped"
+msgstr "{ratio:.3%} dei campioni saturati"
+
+msgid "no clipping"
+msgstr "nessuna saturazione"
+
+msgid "{hz} Hz cut, low end {db:+.0f} dB"
+msgstr "taglio a {hz} Hz, bassi {db:+.0f} dB"
+
+msgid "{hz} Hz hum, {db:.0f} dB above its surroundings"
+msgstr "ronzio a {hz} Hz, {db:.0f} dB sopra le frequenze vicine"
+
+msgid "no mains hum"
+msgstr "nessun ronzio di rete"
+
+msgid "quiet voice ({db:.0f} dBFS): +{g:.0f} dB"
+msgstr "voce bassa ({db:.0f} dBFS): +{g:.0f} dB"
+
+msgid "voice level fine"
+msgstr "livello della voce adeguato"
+
+msgid "noise would sit at {db:.0f} dBFS: neural denoise {mix:.0%}"
+msgstr "il rumore arriverebbe a {db:.0f} dBFS: riduzione neurale {mix:.0%}"
+
+msgid "noise would sit at {db:.0f} dBFS: spectral denoise"
+msgstr "il rumore arriverebbe a {db:.0f} dBFS: riduzione spettrale"
+
+msgid "quiet background ({db:.0f} dBFS after leveling)"
+msgstr "fondo silenzioso ({db:.0f} dBFS dopo il livellamento)"
+
+msgid "pauses lowered by up to {db:.0f} dB"
+msgstr "pause abbassate fino a {db:.0f} dB"
+
+msgid "pauses already quiet"
+msgstr "pause già silenziose"
+
+msgid "speech level varies by {db:.1f} dB"
+msgstr "il livello della voce varia di {db:.1f} dB"
+
+msgid "steady speech level"
+msgstr "livello della voce costante"
+
+msgid "boxy low-mids ({db:+.0f} dB)"
+msgstr "medio-bassi rimbombanti ({db:+.0f} dB)"
+
+msgid "balanced low-mids"
+msgstr "medio-bassi equilibrati"
+
+msgid "muffled voice ({db:+.0f} dB highs)"
+msgstr "voce ovattata (acuti {db:+.0f} dB)"
+
+msgid "clear voice"
+msgstr "voce chiara"
+
+msgid "strong sibilance ({db:+.0f} dB)"
+msgstr "sibilanti forti ({db:+.0f} dB)"
+
+msgid "no harsh sibilance"
+msgstr "nessuna sibilante aspra"
+
+msgid "loudness range {lra:.0f} LU: {ratio}:1"
+msgstr "gamma di loudness {lra:.0f} LU: {ratio}:1"
+
+msgid "no speech detected"
+msgstr "nessun parlato rilevato"
+
+msgid "{lufs:.0f} LUFS, {tp:.0f} dBTP"
+msgstr "{lufs:.0f} LUFS, {tp:.0f} dBTP"
+
+msgid "true-peak safety"
+msgstr "protezione dei picchi"
+
+msgid "voice kept ({db:.1f} dB)"
+msgstr "voce preservata ({db:.1f} dB)"
+
+msgid "backed off to {mix:.0%}, it was taking {db:.1f} dB of voice"
+msgstr "ridotta al {mix:.0%}, toglieva {db:.1f} dB di voce"
+
+msgid "weak voice under noise: gentle spectral denoise (neural took {db:.1f} dB of voice)"
+msgstr "voce debole sotto il rumore: riduzione spettrale delicata (quella neurale toglieva {db:.1f} dB di voce)"
+
+msgid "ffmpeg is required for audio processing"
+msgstr "serve ffmpeg per l'elaborazione audio"
+
+msgid "the recording has no usable audio"
+msgstr "la registrazione non ha audio utilizzabile"
 
 msgid "webcam not found: {device}"
 msgstr "webcam non trovata: {device}"
@@ -277,6 +394,18 @@ msgstr "non avviare le applicazioni in 'launch'"
 
 msgid "do not show the webcam bubble on screen"
 msgstr "non mostrare la bolla della webcam sullo schermo"
+
+msgid "do not optimize the audio after recording"
+msgstr "non ottimizzare l'audio dopo la registrazione"
+
+msgid "optimize the audio of a video file (noise, levels, loudness)"
+msgstr "ottimizza l'audio di un video (rumore, livelli, loudness)"
+
+msgid "output file (default: FILE.processed.EXT)"
+msgstr "file di output (predefinito: FILE.processed.EXT)"
+
+msgid "only analyze and show the plan"
+msgstr "analizza soltanto e mostra il piano"
 
 msgid "list webcams, microphones, monitors and windows"
 msgstr "elenca webcam, microfoni, monitor e finestre"
@@ -368,6 +497,36 @@ msgstr "finalizzazione…"
 msgid "recording to {path} — Ctrl+C to stop"
 msgstr "registrazione in {path} — Ctrl+C per fermare"
 
+msgid "note: install ffmpeg to optimize the audio"
+msgstr "nota: installa ffmpeg per ottimizzare l'audio"
+
+msgid "optimizing audio…"
+msgstr "ottimizzazione audio…"
+
+msgid "audio optimization failed, the original recording was kept: {error}"
+msgstr "ottimizzazione audio non riuscita, la registrazione originale è stata conservata: {error}"
+
+msgid "analyzing"
+msgstr "analisi"
+
+msgid "measuring"
+msgstr "misura"
+
+msgid "rendering"
+msgstr "elaborazione"
+
+msgid "done"
+msgstr "fatto"
+
+msgid "verifying"
+msgstr "verifica"
+
+msgid "file not found"
+msgstr "file non trovato"
+
+msgid "cannot read {path}: {error}"
+msgstr "impossibile leggere {path}: {error}"
+
 msgid "Webcams:"
 msgstr "Webcam:"
 
@@ -388,9 +547,6 @@ msgstr "Monitor e finestre: su Wayland si scelgono tramite il portale di sistema
 
 msgid "saved permissions forgotten"
 msgstr "autorizzazioni salvate dimenticate"
-
-msgid "cannot read {path}: {error}"
-msgstr "impossibile leggere {path}: {error}"
 
 msgid "invalid YAML: {error}"
 msgstr "YAML non valido: {error}"
@@ -493,6 +649,9 @@ msgid ""
 "audio:\n"
 "  microphone: default        # default, false, \"test\" or part of the device name\n"
 "  desktop: false             # system sound\n"
+"  processing: auto           # adaptive noise reduction, leveling and loudness after recording (or off)\n"
+"  target: youtube            # loudness target: youtube (-14 LUFS), podcast (-16) or broadcast (-23)\n"
+"  keep_original: true        # keep the unprocessed file next to the result\n"
 "\n"
 "# Pages that are never recorded: when one has focus the share scene does not\n"
 "# start (or freezes on the last safe frame). rec0 has a built-in list of mail,\n"
@@ -551,6 +710,9 @@ msgstr ""
 "audio:\n"
 "  microphone: default        # default, false, \"test\" o parte del nome del dispositivo\n"
 "  desktop: false             # audio di sistema\n"
+"  processing: auto           # riduzione del rumore, livellamento e loudness adattivi dopo la registrazione (o off)\n"
+"  target: youtube            # loudness: youtube (-14 LUFS), podcast (-16) o broadcast (-23)\n"
+"  keep_original: true        # conserva il file non elaborato accanto al risultato\n"
 "\n"
 "# Pagine che non vengono mai registrate: quando una ha il focus la condivisione\n"
 "# non parte (o si congela sull'ultimo fotogramma sicuro). rec0 ha una lista\n"
@@ -589,3 +751,9 @@ msgstr "tempo scaduto durante la finalizzazione del file"
 
 msgid "paused, {domain} is private"
 msgstr "in pausa, {domain} è privato"
+
+msgid "Close-up"
+msgstr "Primo piano"
+
+msgid "Share"
+msgstr "Condivisione"

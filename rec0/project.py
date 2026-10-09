@@ -102,6 +102,9 @@ class Audio:
     desktop: bool = False
     microphone_volume: float = 1.0
     desktop_volume: float = 1.0
+    processing: bool = True             # adaptive post-processing after recording (audio.py)
+    target: str = "youtube"             # loudness target: youtube, podcast, broadcast
+    keep_original: bool = True          # keep the unprocessed recording next to the result
 
 
 @dataclass
@@ -342,6 +345,9 @@ def _audio(raw: dict, errors: list[str]) -> Audio:
         desktop=bool(raw.get("desktop", False)),
         microphone_volume=_float(raw.get("microphone_volume", 1.0), "audio.microphone_volume", errors),
         desktop_volume=_float(raw.get("desktop_volume", 1.0), "audio.desktop_volume", errors),
+        processing=raw.get("processing", "auto") not in (False, "off", "none"),
+        target=_choice(raw.get("target", "youtube"), ("youtube", "podcast", "broadcast"), "audio.target", errors),
+        keep_original=bool(raw.get("keep_original", True)),
     )
 
 
@@ -404,6 +410,13 @@ def _privacy(raw: dict, errors: list[str]) -> tuple[privacy.Rule, ...]:
             errors.append(_("{where}: must be a string or a mapping with '{key}'").format(
                 where=f"privacy.block[{i}]", key="domain"))
     return privacy.build(allow, block)
+
+
+def _choice(value, choices: tuple[str, ...], where: str, errors: list[str]) -> str:
+    if value not in choices:
+        errors.append(_("{where}: must be one of {values}").format(where=where, values=", ".join(choices)))
+        return choices[0]
+    return value
 
 
 def _mapping(value, where: str, errors: list[str]) -> dict:
@@ -515,6 +528,9 @@ windows:
 audio:
   microphone: default        # default, false, "test" or part of the device name
   desktop: false             # system sound
+  processing: auto           # adaptive noise reduction, leveling and loudness after recording (or off)
+  target: youtube            # loudness target: youtube (-14 LUFS), podcast (-16) or broadcast (-23)
+  keep_original: true        # keep the unprocessed file next to the result
 
 # Pages that are never recorded: when one has focus the share scene does not
 # start (or freezes on the last safe frame). rec0 has a built-in list of mail,

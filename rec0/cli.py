@@ -15,7 +15,7 @@ from . import __version__
 from .i18n import _
 from .project import ProjectError, load, template
 
-COMMANDS = {"init", "check", "record", "devices", "pipeline", "forget", "-h", "--help", "--version"}
+COMMANDS = {"init", "check", "record", "process", "devices", "pipeline", "forget", "-h", "--help", "--version"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,6 +42,13 @@ def main(argv: list[str] | None = None) -> int:
                    help=_("auto follows window focus (default)"))
     p.add_argument("--no-launch", action="store_true", help=_("do not start the applications in 'launch'"))
     p.add_argument("--no-bubble", action="store_true", help=_("do not show the webcam bubble on screen"))
+    p.add_argument("--no-process", action="store_true", help=_("do not optimize the audio after recording"))
+
+    p = sub.add_parser("process", help=_("optimize the audio of a video file (noise, levels, loudness)"))
+    p.add_argument("file")
+    p.add_argument("-o", "--output", help=_("output file (default: FILE.processed.EXT)"))
+    p.add_argument("-t", "--target", choices=("youtube", "podcast", "broadcast"), default="youtube")
+    p.add_argument("-n", "--dry-run", action="store_true", help=_("only analyze and show the plan"))
 
     sub.add_parser("devices", help=_("list webcams, microphones, monitors and windows"))
 
@@ -217,7 +224,67 @@ def cmd_record(args) -> int:
         GLib.timeout_add(int(args.duration * 1000), request_stop)
     loop.run()
     captures.close()
+    if result["code"] == 0 and output.exists() and project.audio.processing and not args.no_process:
+        from . import audio, postprocess
+
+        if not audio.available():
+            print(_("note: install ffmpeg to optimize the audio"))
+            return 0
+        print(_("optimizing audio…"))
+        try:
+            report = postprocess.finalize(project, output, _progress_printer())
+        except audio.AudioError as e:
+            print("\n" + _("audio optimization failed, the original recording was kept: {error}").format(error=e),
+                  file=sys.stderr)
+            return 1
+        print()
+        _print_report(report)
     return result["code"]
+
+
+def _progress_printer():
+    labels = {"analyze": _("analyzing"), "measure": _("measuring"), "render": _("rendering"),
+              "verify": _("verifying"), "done": _("done")}
+
+    def progress(step, value):
+        print(f"\r\033[K  {labels.get(step, step)} {value:.0%}", end="", flush=True)
+    return progress
+
+
+def _print_report(report) -> None:
+    for s in report.stages:
+        print(f"  {'●' if s.enabled else '○'} {s.name:<10} {s.reason}")
+    r = report.result
+    print(_("Result: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, loudness range {lra:.1f} LU").format(
+        lufs=r["integrated_lufs"], tp=r["true_peak_dbtp"], lra=r["loudness_range_lu"]))
+    print(_("saved: {path}").format(path=report.output))
+
+
+def cmd_process(args) -> int:
+    from . import audio
+
+    src = Path(args.file)
+    if not src.exists():
+        print(_("cannot read {path}: {error}").format(path=src, error=_("file not found")), file=sys.stderr)
+        return 1
+    if not audio.available():
+        print(_("ffmpeg is required for audio processing"), file=sys.stderr)
+        return 1
+    if args.dry_run:
+        a = audio.analyze(src)
+        print(a.summary())
+        for line in audio.plan(a, args.target).describe():
+            print("  " + line)
+        return 0
+    dst = Path(args.output) if args.output else src.with_name(f"{src.stem}.processed{src.suffix}")
+    try:
+        report = audio.process(src, dst, args.target, _progress_printer())
+    except audio.AudioError as e:
+        print("\n" + _("error: {message}").format(message=e), file=sys.stderr)
+        return 1
+    print()
+    _print_report(report)
+    return 0
 
 
 def cmd_devices(args) -> int:

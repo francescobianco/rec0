@@ -52,6 +52,50 @@ privacy:
     - {domain: intranet.example, titles: ["Intranet"]}
 ```
 
+### Audio: ottimizzazione automatica
+
+A fine registrazione rec0 ottimizza l'audio con un **processore adattivo**: prima misura
+la registrazione, poi accende solo i circuiti che servono, con parametri ricavati dalle
+misure. Chi registra per la prima volta, anche con un microfono economico, ottiene subito
+un audio pulito, uniforme e al volume giusto per YouTube.
+
+| Circuito | Si accende quando | Come si regola |
+|---|---|---|
+| declip | ci sono campioni saturati | — |
+| highpass | sempre | taglio a 70/80/100 Hz secondo il rimbombo misurato |
+| dehum | spicca una riga a 50/60 Hz | notch sulla fondamentale e 3 armoniche |
+| preamp | la voce è sotto -30 dBFS | la porta a -24 dBFS prima del denoise |
+| denoise | il rumore sarebbe udibile **dopo** la normalizzazione | rete neurale RNNoise, miscelazione in base al bisogno |
+| expander | resta rumore nelle pause | abbassa le pause fino a 18 dB, soglia tra rumore e voce |
+| leveler | il livello della voce varia (distanza dal microfono) | non alza le pause |
+| mud / presence / deesser | medio-bassi in eccesso / voce ovattata / sibilanti aspre | EQ ed de-esser dosati sulla misura |
+| compressor | c'è parlato | rapporto 2:1, 3:1 o 4:1 secondo la gamma dinamica |
+| loudness + limiter | sempre | EBU R128 a due passate: -14 LUFS, true peak -1 dBTP (limitatore sovracampionato 4×) |
+
+Il denoise è **sotto controllo in retroazione**: prima del rendering il processore misura
+quanta voce sopravvive e, se la rete neurale ne toglie più di 3 dB, ne riduce la
+miscelazione o passa a un denoise spettrale delicato. La voce viene prima della pulizia.
+
+L'originale resta accanto al risultato (`nome.original.mp4`) e, se l'elaborazione
+fallisce, la registrazione viene ripristinata. Il video non viene ricodificato.
+
+```yaml
+audio:
+  processing: auto      # oppure off
+  target: youtube       # youtube (-14 LUFS), podcast (-16), broadcast (-23)
+  keep_original: true
+```
+
+Da terminale, anche su video esistenti:
+
+```bash
+rec0 process video.mp4 --dry-run   # mostra misure e circuiti che si accenderebbero
+rec0 process video.mp4             # crea video.processed.mp4
+```
+
+Serve `ffmpeg`. Il modello RNNoise (`assets/rnnoise/sh.rnnn`) viene da
+[GregorR/rnnoise-models](https://github.com/GregorR/rnnoise-models).
+
 ## Installazione
 
 Dipendenze (Ubuntu):
@@ -60,7 +104,7 @@ Dipendenze (Ubuntu):
 sudo apt install python3-gi python3-gi-cairo python3-yaml gir1.2-gtk-4.0 gir1.2-gtk-3.0 \
   gir1.2-adw-1 gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-  gstreamer1.0-pipewire gstreamer1.0-x gettext
+  gstreamer1.0-pipewire gstreamer1.0-x gettext ffmpeg
 ```
 
 Poi:
@@ -211,6 +255,8 @@ make api ARGS="log"
 | `focus.py` | segue la finestra attiva |
 | `scenes.py` | geometria delle scene e transizioni (funzioni pure) |
 | `recorder.py` | pipeline GStreamer e `Director`, che anima le scene e applica la privacy |
+| `audio.py` | processore audio adattivo: analisi, piano dei circuiti, rendering |
+| `postprocess.py` | ottimizzazione a fine registrazione, con l'originale al sicuro |
 | `bubble.py` | bolla con la webcam sullo schermo (processo GTK3 separato) |
 | `app.py` | interfaccia GTK4 + Libadwaita |
 | `devapi.py` | API locale di sviluppo |
