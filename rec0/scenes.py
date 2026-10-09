@@ -52,8 +52,16 @@ def bubble_rect(bubble: Bubble, monitor: Rect) -> Rect:
     return Rect(monitor.x + x, monitor.y + y, d, d)
 
 
-def window_layer(project: Project, monitor: Rect, window: Rect | None) -> Layer:
-    """The window, cropped out of the monitor capture, at its real position."""
+FILL_STRETCH_MAX = 0.04   # aspect mismatch a fullscreen window may be stretched by
+
+
+def window_layer(project: Project, monitor: Rect, window: Rect | None, fullscreen: bool = False) -> Layer:
+    """The window, cropped out of the monitor capture, at its real position.
+
+    A fullscreen (or maximized) window fills the whole canvas instead: what fills
+    the real screen fills the video. A small aspect mismatch (a maximized window
+    under the top bar) is stretched away, a larger one is fitted without distortion.
+    """
     s, ox, oy = screen_area(project, monitor)
     if window is None:
         window = monitor
@@ -65,13 +73,21 @@ def window_layer(project: Project, monitor: Rect, window: Rect | None) -> Layer:
     if x2 - x1 < 2 or y2 - y1 < 2:
         x1, y1, x2, y2 = monitor.x, monitor.y, monitor.x + monitor.width, monitor.y + monitor.height
     crop = (x1 - monitor.x, y1 - monitor.y, monitor.x + monitor.width - x2, monitor.y + monitor.height - y2)
+    if fullscreen:
+        cw, ch = project.width, project.height
+        ww, wh = x2 - x1, y2 - y1
+        if abs((ww / wh) / (cw / ch) - 1) <= FILL_STRETCH_MAX:
+            return Layer(Rect(0, 0, cw, ch), 1.0, crop)
+        k = min(cw / ww, ch / wh)
+        w, h = round(ww * k), round(wh * k)
+        return Layer(Rect((cw - w) // 2, (ch - h) // 2, w, h), 1.0, crop)
     rect = Rect(round(ox + (x1 - monitor.x) * s), round(oy + (y1 - monitor.y) * s),
                 max(1, round((x2 - x1) * s)), max(1, round((y2 - y1) * s)))
     return Layer(rect, 1.0, crop)
 
 
 def compose(project: Project, scene: str, monitor: Rect | None, window: Rect | None,
-            previous: Frame | None = None, bubble: Rect | None = None) -> Frame:
+            previous: Frame | None = None, bubble: Rect | None = None, fullscreen: bool = False) -> Frame:
     """`bubble` is the absolute rect of the on-screen bubble, when shown: in the share
     scene the webcam overlay sits exactly on top of it, so it never appears twice."""
     cam = project.camera
@@ -87,7 +103,7 @@ def compose(project: Project, scene: str, monitor: Rect | None, window: Rect | N
             camera = Layer(cam.closeup.rect, 0.0)
     if monitor is not None:
         if scene == "share":
-            screen = window_layer(project, monitor, window)
+            screen = window_layer(project, monitor, window, fullscreen)
         elif previous and previous.screen:
             # Fade out in place rather than jumping somewhere else.
             screen = replace(previous.screen, alpha=0.0)

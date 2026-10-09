@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -210,7 +211,14 @@ class Recorder:
                           f"! volume volume={a.desktop_volume}")
         if not inputs:
             return []
-        return [f"audiomixer name=amix ! audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}",
+        out = f"audioconvert ! audio/x-raw,channels=2 ! queue ! {encode or 'fakesink sync=false'}"
+        if len(inputs) == 1:
+            # A single input needs no mixer. audiomixer drops and resyncs buffers that
+            # arrive late for its deadline (measured: thousands of 10 ms cuts in the
+            # GUI with a USB microphone): audible clicks.
+            return [f"{inputs[0]} ! queue ! {out}"]
+        # Two inputs: give late buffers 200 ms instead of dropping them.
+        return [f"audiomixer name=amix latency={200 * Gst.MSECOND} ! {out}",
                 *(f"{i} ! queue ! amix." for i in inputs)]
 
     # ---- scenes -----------------------------------------------------------
@@ -327,7 +335,7 @@ class Recorder:
         return False
 
     def _finish(self):
-        output = self.output if self.recording else None
+        output = self.output if self.recording and self._playing else None
         self._teardown()
         self._emit(self.on_finished, output)
 
@@ -364,15 +372,21 @@ class Recorder:
             err, _dbg = msg.parse_error()
             name = msg.src.get_name() if msg.src else "?"
             self._emit(self.on_error, f"{name}: {err.message}")
-            if self.recording:
+            if self.recording and self._playing and not self._stopping:
                 # The failing branch can no longer carry EOS: push it straight into
-                # the muxer so what was recorded so far is still a valid file.
+                # the muxer so what was recorded so far is still a valid file. From
+                # another thread: send_event can block on the muxer's stream lock.
                 self._stopping = True
                 mux = self.pipeline.get_by_name("mux")
-                for pad in mux.sinkpads:
-                    pad.send_event(Gst.Event.new_eos())
+
+                def push_eos():
+                    for pad in mux.sinkpads:
+                        pad.send_event(Gst.Event.new_eos())
+
+                threading.Thread(target=push_eos, name="rec0-eos", daemon=True).start()
                 GLib.timeout_add_seconds(5, self._force_stop)
-            else:
+            elif not self._stopping or not self.recording:
+                # Never started (e.g. webcam busy): nothing to save.
                 self._finish()
         elif t == Gst.MessageType.ELEMENT and self.on_level:
             s = msg.get_structure()
@@ -474,9 +488,10 @@ class Director:
         return self.recorder.captures.monitor
 
     def _target(self, scene: str) -> Frame:
-        rect = self.window.rect if (scene == "share" and self.window) else None
-        return compose(self.project, scene, self.monitor, rect, previous=getattr(self, "frame", None),
-                       bubble=self.bubble)
+        shown = self.window if (scene == "share" and self.window) else None
+        return compose(self.project, scene, self.monitor, shown.rect if shown else None,
+                       previous=getattr(self, "frame", None), bubble=self.bubble,
+                       fullscreen=bool(shown and shown.fullscreen))
 
     def _placement(self, scene: str):
         cam = self.project.camera

@@ -421,6 +421,8 @@ class Window(Adw.ApplicationWindow):
         self.director.set_mode("auto" if auto else "camera")
         self._on_scene(self.director.scene, None)
         self._start_preview()
+        # Shown whenever rec0 is not focused, also before recording, so it can be placed.
+        self._start_bubble()
 
     def _fit_when_ready(self, frame, _clock):
         # Wait until the preview has a real size (the webcam can take a while).
@@ -530,7 +532,6 @@ class Window(Adw.ApplicationWindow):
         self._inhibit_cookie = self.get_application().inhibit(
             self, Gtk.ApplicationInhibitFlags.SUSPEND | Gtk.ApplicationInhibitFlags.IDLE
             | Gtk.ApplicationInhibitFlags.LOGOUT, _("Recording a video"))
-        self._start_bubble()
         self.status.set_label(_("Recording"))
         self.status.add_css_class("recording")
         self.timer.remove_css_class("dim-label")
@@ -573,7 +574,6 @@ class Window(Adw.ApplicationWindow):
     def _on_finished(self, path):
         if path is None:
             return   # preview stopped
-        self._stop_bubble()
         if self._inhibit_cookie:
             self.get_application().uninhibit(self._inhibit_cookie)
             self._inhibit_cookie = 0
@@ -663,7 +663,7 @@ class Window(Adw.ApplicationWindow):
 
     def _start_bubble(self):
         cam = self.project.camera
-        if not (cam and cam.bubble and self.settings.get_boolean("show-bubble")):
+        if self.bubble or not (cam and cam.bubble and self.settings.get_boolean("show-bubble")):
             return
         monitor = self.captures.monitor or self._primary_monitor()
         r = bubble_rect(cam.bubble, monitor)
@@ -873,6 +873,15 @@ class Application(Adw.Application):
         )
         about.present(self.window)
 
+    def _set_bubble_enabled(self, enabled: bool):
+        settings.get().set_boolean("show-bubble", enabled)
+        win = self.window
+        if win and win.project:
+            if enabled:
+                win._start_bubble()
+            else:
+                win._stop_bubble()
+
     def _preferences(self):
         s = settings.get()
         dialog = Adw.PreferencesDialog()
@@ -885,9 +894,9 @@ class Application(Adw.Application):
         countdown.connect("notify::value", lambda r, _p: s.set_int("countdown", int(r.get_value())))
         group.add(countdown)
         bubble = Adw.SwitchRow(title=_("Webcam Bubble"),
-                               subtitle=_("Show your webcam on screen while recording, when rec0 is not focused"),
+                               subtitle=_("Show your webcam on screen when rec0 is not focused, to place it before recording"),
                                active=s.get_boolean("show-bubble"))
-        bubble.connect("notify::active", lambda r, _p: s.set_boolean("show-bubble", r.get_active()))
+        bubble.connect("notify::active", lambda r, _p: self._set_bubble_enabled(r.get_active()))
         group.add(bubble)
         optimize = Adw.SwitchRow(title=_("Optimize Audio"),
                                  subtitle=_("Reduce noise, even out levels and set the loudness for online video "

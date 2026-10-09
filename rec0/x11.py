@@ -21,6 +21,7 @@ class FocusedWindow:
     title: str
     wm_class: str
     rect: Rect
+    fullscreen: bool = False   # fullscreen, or maximized both ways
 
 
 @dataclass
@@ -218,6 +219,9 @@ class X11:
                                              byref(rx), byref(ry), byref(child)):
             return None
         title, wm_class = self._title(wid), self._wm_class(wid)
+        state = set(self._cardinals(wid, "_NET_WM_STATE"))
+        fullscreen = self.atom("_NET_WM_STATE_FULLSCREEN") in state or {
+            self.atom("_NET_WM_STATE_MAXIMIZED_VERT"), self.atom("_NET_WM_STATE_MAXIMIZED_HORZ")} <= state
         frame = self._cardinals(wid, "_NET_FRAME_EXTENTS")
         gtk = self._cardinals(wid, "_GTK_FRAME_EXTENTS")
         if self._dpy in _errors:     # the window went away while we were reading it
@@ -229,7 +233,8 @@ class X11:
         gl, gr, gt, gb = gtk if len(gtk) == 4 else (0, 0, 0, 0)
         x, y = x - fl + gl, y - ft + gt
         w, h = w + fl + fr - gl - gr, h + ft + fb - gt - gb
-        return FocusedWindow(xid=wid, title=title, wm_class=wm_class, rect=Rect(x, y, w, h))
+        return FocusedWindow(xid=wid, title=title, wm_class=wm_class, rect=Rect(x, y, w, h),
+                             fullscreen=fullscreen)
 
     def client_windows(self) -> list[X11Window]:
         if not self._dpy:

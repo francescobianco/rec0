@@ -132,6 +132,8 @@ def find_microphone(spec: str) -> str | None:
     for m in mics:
         if spec.casefold() in m.name.casefold() or spec.casefold() in m.id.casefold():
             return m.id
+    if spec.endswith(".monitor"):
+        return spec   # the monitor of an output: valid for pulsesrc, not listed as a microphone
     raise CaptureError(_("no microphone matches '{spec}' (available: {devices})").format(
         spec=spec, devices=", ".join(m.name for m in mics)))
 

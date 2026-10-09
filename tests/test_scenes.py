@@ -68,3 +68,22 @@ def test_overlay_follows_bubble():
     f = compose(p, "share", MONITOR, Rect(0, 0, 1920, 1080), bubble=b)
     # same 0.8 scale and offset as the screen layer: it covers the captured bubble exactly
     assert f.camera.rect == Rect(192 + round(1680 * 0.8), 108 + round(840 * 0.8), 160, 160)
+
+
+def test_fullscreen_window_fills_the_canvas():
+    p = project(screen={"margin": 108})
+    layer = window_layer(p, MONITOR, Rect(0, 0, 1920, 1080), fullscreen=True)
+    assert layer.rect == Rect(0, 0, 1920, 1080)
+
+
+def test_maximized_window_under_the_top_bar_is_stretched_to_fill():
+    p = project(screen={"margin": 40})
+    layer = window_layer(p, MONITOR, Rect(0, 32, 1920, 1048), fullscreen=True)
+    assert layer.rect == Rect(0, 0, 1920, 1080)
+    assert layer.crop == (0, 32, 0, 0)
+
+
+def test_fullscreen_with_a_different_aspect_is_fitted_not_distorted():
+    p = project()
+    layer = window_layer(p, MONITOR, Rect(0, 0, 1080, 1080), fullscreen=True)
+    assert layer.rect == Rect(420, 0, 1080, 1080)

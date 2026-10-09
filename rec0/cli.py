@@ -188,10 +188,28 @@ def cmd_record(args) -> int:
             print(f"\r\033[K● REC {s // 3600:02d}:{s // 60 % 60:02d}:{s % 60:02d}", end="", flush=True)
         return True
 
+    stops = {"n": 0}
+
     def request_stop(*_args):
+        stops["n"] += 1
+        if stops["n"] > 1 or not rec._playing:
+            # Nothing recorded yet (the pipeline never started), or asked twice: leave now.
+            rec._teardown()
+            result["code"] = result["code"] or 1
+            loop.quit()
+            return True
         print("\n" + _("finishing…"))
         rec.stop()
         return True
+
+    def check_started():
+        if rec.pipeline is not None and not rec._playing:
+            print("\n" + _("error: {message}").format(
+                message=_("recording did not start (is the webcam used by another program?)")), file=sys.stderr)
+            result["code"] = 1
+            rec._teardown()
+            loop.quit()
+        return False
 
     rec.on_error = on_error
     rec.on_finished = on_finished
@@ -220,6 +238,7 @@ def cmd_record(args) -> int:
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, request_stop)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, request_stop)
     GLib.timeout_add(500, tick)
+    GLib.timeout_add_seconds(10, check_started)
     if args.duration:
         GLib.timeout_add(int(args.duration * 1000), request_stop)
     loop.run()

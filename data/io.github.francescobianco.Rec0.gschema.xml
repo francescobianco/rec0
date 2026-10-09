@@ -28,7 +28,7 @@
     </key>
     <key name="show-bubble" type="b">
       <default>true</default>
-      <summary>Show the webcam bubble on screen while recording</summary>
+      <summary>Show the webcam bubble on screen when rec0 is not focused</summary>
       <description>Whether to show a floating round webcam bubble on the screen while recording, which marks where the webcam appears in the video.</description>
     </key>
     <key name="countdown" type="i">
