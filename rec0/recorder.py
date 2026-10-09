@@ -140,7 +140,9 @@ class Recorder:
             self.circle = pl.circle
             pads.append(f"{CAMERA_PAD}::zorder=2 " + _pad_props(CAMERA_PAD, frame.camera, pl.fit))
             parts.append(
-                f"{camera} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! videoscale "
+                # No scaling before the tee: caps are negotiated across both branches,
+                # and the small bubble branch would drag the video branch down with it.
+                f"{camera} ! queue max-size-buffers=3 leaky=downstream ! videoconvert "
                 # Mirrored before the tee: the video and the on-screen bubble agree.
                 f"{'! videoflip video-direction=horiz ' if cam.mirror is not False else ''}! tee name=camt "
                 f"camt. ! queue max-size-buffers=3 leaky=downstream "

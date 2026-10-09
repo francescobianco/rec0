@@ -25,7 +25,7 @@ from .scenes import bubble_rect, scene_label  # noqa: E402
 CSS = b"""
 .preview { background: black; border-radius: 12px;
            /* Drawn over the picture, takes no space: a theme-coloured edge. */
-           outline: 1px solid alpha(@window_fg_color, 0.18); outline-offset: -1px; }
+           outline: 1px solid alpha(black, 0.5); outline-offset: -1px; }
 .rec-idle { color: @error_color; }
 .timer { font-feature-settings: "tnum"; font-weight: 600; }
 .recording { color: @error_color; }
