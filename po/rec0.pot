@@ -5,7 +5,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
-"POT-Creation-Date: 2026-10-09 14:38+0200\n"
+"POT-Creation-Date: 2026-10-09 14:42+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -307,119 +307,119 @@ msgstr ""
 msgid "Reopen Last Project"
 msgstr ""
 
-#: rec0/audio.py:306
+#: rec0/audio.py:425
 msgid "{ratio:.3%} of samples clipped"
 msgstr ""
 
-#: rec0/audio.py:309
+#: rec0/audio.py:428
 msgid "no clipping"
 msgstr ""
 
-#: rec0/audio.py:313
+#: rec0/audio.py:432
 msgid "{hz} Hz cut, low end {db:+.0f} dB"
 msgstr ""
 
-#: rec0/audio.py:319
+#: rec0/audio.py:438
 msgid "{hz} Hz hum, {db:.0f} dB above its surroundings"
 msgstr ""
 
-#: rec0/audio.py:322
+#: rec0/audio.py:441
 msgid "no mains hum"
 msgstr ""
 
-#: rec0/audio.py:335
+#: rec0/audio.py:454
 msgid "quiet voice ({db:.0f} dBFS): +{g:.0f} dB"
 msgstr ""
 
-#: rec0/audio.py:339
+#: rec0/audio.py:458
 msgid "voice level fine"
 msgstr ""
 
-#: rec0/audio.py:352
+#: rec0/audio.py:471
 msgid "noise would sit at {db:.0f} dBFS: neural denoise {mix:.0%}"
 msgstr ""
 
-#: rec0/audio.py:357
+#: rec0/audio.py:476
 msgid "noise would sit at {db:.0f} dBFS: spectral denoise"
 msgstr ""
 
-#: rec0/audio.py:360
+#: rec0/audio.py:479
 msgid "quiet background ({db:.0f} dBFS after leveling)"
 msgstr ""
 
-#: rec0/audio.py:368
-msgid "pauses lowered by up to {db:.0f} dB"
+#: rec0/audio.py:487
+msgid "breaths and noise between words lowered by {db} dB"
 msgstr ""
 
-#: rec0/audio.py:372
+#: rec0/audio.py:491
 msgid "pauses already quiet"
 msgstr ""
 
-#: rec0/audio.py:375
+#: rec0/audio.py:494
 msgid "speech level varies by {db:.1f} dB"
 msgstr ""
 
-#: rec0/audio.py:380
+#: rec0/audio.py:499
 msgid "steady speech level"
 msgstr ""
 
-#: rec0/audio.py:385
+#: rec0/audio.py:504
 msgid "boxy low-mids ({db:+.0f} dB)"
 msgstr ""
 
-#: rec0/audio.py:388
+#: rec0/audio.py:507
 msgid "balanced low-mids"
 msgstr ""
 
-#: rec0/audio.py:393
+#: rec0/audio.py:512
 msgid "muffled voice ({db:+.0f} dB highs)"
 msgstr ""
 
-#: rec0/audio.py:396
+#: rec0/audio.py:515
 msgid "clear voice"
 msgstr ""
 
-#: rec0/audio.py:400
+#: rec0/audio.py:519
 msgid "strong sibilance ({db:+.0f} dB)"
 msgstr ""
 
-#: rec0/audio.py:403
+#: rec0/audio.py:522
 msgid "no harsh sibilance"
 msgstr ""
 
-#: rec0/audio.py:409
+#: rec0/audio.py:528
 msgid "loudness range {lra:.0f} LU: {ratio}:1"
 msgstr ""
 
-#: rec0/audio.py:412
+#: rec0/audio.py:531
 msgid "no speech detected"
 msgstr ""
 
-#: rec0/audio.py:414
+#: rec0/audio.py:533
 msgid "{lufs:.0f} LUFS, {tp:.0f} dBTP"
 msgstr ""
 
-#: rec0/audio.py:415
+#: rec0/audio.py:534
 msgid "true-peak safety"
 msgstr ""
 
-#: rec0/audio.py:484
+#: rec0/audio.py:604
 msgid "voice kept ({db:.1f} dB)"
 msgstr ""
 
-#: rec0/audio.py:490
+#: rec0/audio.py:610
 msgid "backed off to {mix:.0%}, it was taking {db:.1f} dB of voice"
 msgstr ""
 
-#: rec0/audio.py:495
+#: rec0/audio.py:615
 msgid "weak voice under noise: gentle spectral denoise (neural took {db:.1f} dB of voice)"
 msgstr ""
 
-#: rec0/audio.py:518 rec0/cli.py:292
+#: rec0/audio.py:638 rec0/cli.py:292
 msgid "ffmpeg is required for audio processing"
 msgstr ""
 
-#: rec0/audio.py:529
+#: rec0/audio.py:649
 msgid "the recording has no usable audio"
 msgstr ""
 

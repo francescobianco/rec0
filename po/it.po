@@ -260,8 +260,8 @@ msgstr "il rumore arriverebbe a {db:.0f} dBFS: riduzione spettrale"
 msgid "quiet background ({db:.0f} dBFS after leveling)"
 msgstr "fondo silenzioso ({db:.0f} dBFS dopo il livellamento)"
 
-msgid "pauses lowered by up to {db:.0f} dB"
-msgstr "pause abbassate fino a {db:.0f} dB"
+msgid "breaths and noise between words lowered by {db} dB"
+msgstr "respiri e rumori tra le parole abbassati di {db} dB"
 
 msgid "pauses already quiet"
 msgstr "pause già silenziose"

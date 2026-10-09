@@ -16,7 +16,8 @@ Stages, in signal order:
     dehum       notch mains hum and harmonics               if a 50/60 Hz line stands out
     preamp      raise a quiet voice before denoising        if the voice is far below a normal level
     denoise     neural (RNNoise) noise reduction            if the noise would be audible after leveling
-    expander    push the pauses between phrases down        if noise is still audible after denoise
+    pauses      lower breaths, clicks and noise between     if what is not speech (by voice activity
+                words, before anything can raise them      detection) would be audible
     leveler     even out distance-from-mic changes          if speech level wanders
     mud         cut boxiness around 250 Hz                  if low-mids are excessive
     presence    lift intelligibility around 3.5 kHz         if the voice sounds muffled
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import json
 import math
+import tempfile
 import re
 import shutil
 import statistics
@@ -41,7 +43,8 @@ from typing import Callable
 from .i18n import _, pkgdata
 
 RATE = 48000
-WINDOW = 0.05                 # analysis window, seconds
+FRAME = 1024                  # analysis frame, samples (21.3 ms at 48 kHz)
+WINDOW = FRAME / RATE         # ...in seconds
 
 # Platform loudness targets (integrated LUFS, true peak dBTP).
 TARGETS = {
@@ -53,7 +56,16 @@ TARGETS = {
 # Decision thresholds (dB). Tuned on speech recordings; kept together so they
 # can be adjusted in one place.
 SILENCE_DB = -90.0            # digital silence, ignored by the statistics
-ACTIVE_ABOVE_NOISE = 10.0     # a window is speech if this much above the noise floor
+ACTIVE_ABOVE_NOISE = 10.0     # energy-only fallback: speech if this much above the floor
+VAD_ABOVE_FLOOR = 6.0         # speech is at least this much above the quietest frames
+VAD_FILL_GAP = 0.12           # s: gaps this short are inside words (stop consonants)
+VAD_MIN_SPEECH = 0.10         # s: shorter bursts are clicks
+VAD_PRE, VAD_POST = 0.06, 0.12  # s of margin around speech: onsets and decays
+# (Longer values swallow the 0.3-0.5 s pauses where breaths are: measured on real
+#  recordings, 0.25/0.12/0.25 turned 71% of speech frames into 93%.)
+VAD_ATTACK, VAD_RELEASE = 0.03, 0.25   # s to open and close the pause gain
+PAUSE_TARGET = -60.0          # where non-speech should sit after loudness normalisation
+PAUSE_MAX_DEPTH = 24          # dB: deeper sounds gated, not natural
 NOISE_TARGET = -68.0          # where the noise floor should end up after loudness normalisation
 NOISE_MIN_REDUCTION = 4.0     # below this, denoising is not worth its artifacts
 LEVELER_SPREAD = 4.0          # dB of speech level spread (stdev) that calls for leveling
@@ -104,7 +116,9 @@ class Analysis:
     hum_hz: int | None = None
     hum_prominence_db: float = 0.0
     loudness: dict = field(default_factory=dict)  # loudnorm first pass
-    levels: list = field(default_factory=list, repr=False)  # RMS dB of each analysis window
+    levels: list = field(default_factory=list, repr=False)  # RMS dB of each analysis frame
+    speech: list = field(default_factory=list, repr=False)  # VAD: True where someone is speaking
+    pause_db: float = SILENCE_DB      # loud end of what is not speech (breaths, clicks, keyboard)
 
     def summary(self) -> str:
         return (f"speech {self.speech_db:.1f} dBFS, noise {self.noise_floor_db:.1f} dBFS, "
@@ -118,6 +132,7 @@ class Stage:
     enabled: bool
     reason: str
     filter: str = ""
+    param: float = 0.0     # stage-specific value (pauses: depth in dB)
 
 
 @dataclass
@@ -187,6 +202,112 @@ def _window_levels(stdout: str) -> list[float]:
     return [_db(v) for v in re.findall(r"RMS_level=(\S+)", stdout)]
 
 
+def _features(path: str, head: list[str]) -> list[tuple[float, float, float]]:
+    """(RMS dB, spectral flatness, spectral centroid Hz) of each analysis frame."""
+    r = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostdin", *head, *_mono(path), "-af",
+         f"aformat=sample_fmts=flt:channel_layouts=mono,aresample={RATE},asetnsamples=n={FRAME}:p=0,"
+         f"astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=RMS_level,"
+         f"aspectralstats=win_size={FRAME}:overlap=0:measure=flatness+centroid,ametadata=print:file=-",
+         *_null()], capture_output=True, text=True)
+    out = []
+    for block in r.stdout.split("frame:")[1:]:
+        rms = re.search(r"Overall\.RMS_level=(\S+)", block)
+        flat = re.search(r"\.1\.flatness=(\S+)", block)
+        cent = re.search(r"\.1\.centroid=(\S+)", block)
+        if not rms:
+            continue
+        try:
+            fl = float(flat[1]) if flat else 1.0
+            ce = float(cent[1]) if cent else 0.0
+        except ValueError:
+            fl, ce = 1.0, 0.0
+        out.append((_db(rms[1]), fl if math.isfinite(fl) else 1.0, ce if math.isfinite(ce) else 0.0))
+    return out
+
+
+def vad(feats: list[tuple[float, float, float]]) -> list[bool]:
+    """Voice activity per frame, from level and spectral shape.
+
+    Voiced speech is harmonic (low spectral flatness) with its energy low in the
+    spectrum; breaths, fans, keyboard and clicks are noise-like and bright.
+    Thresholds sit between the quiet and the loud frames of this very file, so
+    the detector adapts to the microphone and the room.
+    """
+    audible = sorted((f for f in feats if f[0] > SILENCE_DB), key=lambda f: f[0])
+    if len(audible) < 20:
+        return [False] * len(feats)
+    n = len(audible)
+    quiet, loud = audible[: max(1, n * 15 // 100)], audible[n * 70 // 100:]
+    fl_q, fl_l = statistics.median(f[1] for f in quiet), statistics.median(f[1] for f in loud)
+    ce_q, ce_l = statistics.median(f[2] for f in quiet), statistics.median(f[2] for f in loud)
+    floor = statistics.median(f[0] for f in quiet)
+    spectral = fl_q > 1.5 * fl_l     # otherwise the spectrum does not tell them apart
+    thr_f = math.sqrt(max(fl_q, 1e-6) * max(fl_l, 1e-6))
+    thr_c = (ce_q + ce_l) / 2
+
+    def voiced(f):
+        if f[0] < floor + VAD_ABOVE_FLOOR:
+            return False
+        if not spectral:
+            return f[0] > floor + ACTIVE_ABOVE_NOISE
+        return f[1] < thr_f or (f[2] < thr_c and f[1] < 1.5 * thr_f)
+
+    raw = [voiced(f) for f in feats]
+    # Median of 3: single-frame flips are not decisions.
+    raw = [sorted(raw[max(0, i - 1):i + 2])[len(raw[max(0, i - 1):i + 2]) // 2] for i in range(len(raw))]
+    return _smooth(raw)
+
+
+def _runs(mask: list[bool]):
+    i = 0
+    while i < len(mask):
+        j = i
+        while j < len(mask) and mask[j] == mask[i]:
+            j += 1
+        yield mask[i], i, j
+        i = j
+
+
+def _smooth(mask: list[bool]) -> list[bool]:
+    frames = lambda seconds: max(1, round(seconds / WINDOW))   # noqa: E731
+    out = mask[:]
+    # Short gaps are inside words (stops, unvoiced consonants): fill them.
+    for val, i, j in list(_runs(out)):
+        if not val and 0 < i and j < len(out) and j - i <= frames(VAD_FILL_GAP):
+            out[i:j] = [True] * (j - i)
+    # Very short bursts are clicks, not speech.
+    for val, i, j in list(_runs(out)):
+        if val and j - i < frames(VAD_MIN_SPEECH):
+            out[i:j] = [False] * (j - i)
+    # Keep a margin around speech: onsets ("s", "f") and decays are speech too.
+    pre, post = frames(VAD_PRE), frames(VAD_POST)
+    grown = out[:]
+    for val, i, j in _runs(out):
+        if val:
+            grown[max(0, i - pre):min(len(out), j + post)] = [True] * (min(len(out), j + post) - max(0, i - pre))
+    return grown
+
+
+def pause_commands(a: Analysis, depth_db: float) -> str:
+    """asendcmd script lowering what is not speech by `depth_db`, with smooth ramps."""
+    low = 10 ** (-depth_db / 20)
+    attack = VAD_ATTACK / WINDOW      # frames to open (the margin already anticipates speech)
+    release = VAD_RELEASE / WINDOW    # frames to close
+    lines, gain, last = [], 1.0, None
+    for i, sp in enumerate(a.speech):
+        target = 1.0 if sp else low
+        # Linear-in-dB ramp towards the target.
+        g_db, t_db = 20 * math.log10(gain), 20 * math.log10(target)
+        step = depth_db / (attack if t_db > g_db else release)
+        g_db = min(t_db, g_db + step) if t_db > g_db else max(t_db, g_db - step)
+        gain = 10 ** (g_db / 20)
+        if last is None or abs(20 * math.log10(gain / last)) > 0.25 or (gain == target and gain != last):
+            lines.append(f"{i * WINDOW:.4f} volume@pauses volume {gain:.5f};")
+            last = gain
+    return "\n".join(lines) + "\n"
+
+
 def _db(value: str) -> float:
     try:
         v = float(value)
@@ -235,29 +356,27 @@ def analyze(path: str | Path, limit: float | None = None) -> Analysis:
         return Analysis(duration=duration, has_audio=False)
     norm = f"aformat=sample_fmts=flt:channel_layouts=mono,aresample={RATE}"
 
-    # 1. Short-window levels: noise floor, speech level and how much it wanders.
-    win = int(RATE * WINDOW)
-    r = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostdin", *head, *_mono(path), "-af",
-         f"{norm},asetnsamples=n={win}:p=0,astats=metadata=1:reset=1:measure_perchannel=none:"
-         f"measure_overall=RMS_level,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-",
-         *_null()], capture_output=True, text=True)
-    all_levels = _window_levels(r.stdout)
-    levels = [v for v in all_levels if v > SILENCE_DB]
-    a = Analysis(duration=duration, has_audio=bool(levels), levels=all_levels)
-    if not levels:
+    # 1. Per-frame level and spectral shape -> voice activity, noise floor, speech level.
+    feats = _features(path, head)
+    levels = [f[0] for f in feats]
+    audible = [v for v in levels if v > SILENCE_DB]
+    a = Analysis(duration=duration, has_audio=bool(audible), levels=levels)
+    if not audible:
         return a
-    ordered = sorted(levels)
-    # Continuous speech leaves few pauses: higher percentiles land in word tails
-    # and reverb, not in the room noise (checked on real OBS recordings).
-    a.noise_floor_db = ordered[int(len(ordered) * 0.03)]
-    active = [v for v in levels if v > a.noise_floor_db + ACTIVE_ABOVE_NOISE]
-    a.active_ratio = len(active) / len(levels)
-    if active:
-        a.speech_db = statistics.median(active)
-        # Smooth over ~1 s so syllables do not count as level changes.
+    a.speech = vad(feats)
+    speech = [v for v, sp in zip(levels, a.speech) if sp and v > SILENCE_DB]
+    other = sorted(v for v, sp in zip(levels, a.speech) if not sp and v > SILENCE_DB)
+    a.active_ratio = len(speech) / len(audible)
+    if other:
+        a.noise_floor_db = other[int(len(other) * 0.2)]   # the steady room/fan noise
+        a.pause_db = other[int(len(other) * 0.95)]        # breaths, clicks, keyboard
+    else:
+        a.noise_floor_db = sorted(audible)[int(len(audible) * 0.03)]
+    if speech:
+        a.speech_db = statistics.median(speech)
+        # Over ~1 s chunks of speech, so syllables do not count as level changes.
         step = int(1 / WINDOW)
-        means = [statistics.fmean(active[i:i + step]) for i in range(0, len(active) - step + 1, step)]
+        means = [statistics.fmean(speech[i:i + step]) for i in range(0, len(speech) - step + 1, step)]
         a.speech_spread_db = statistics.pstdev(means) if len(means) > 1 else 0.0
     a.snr_db = a.speech_db - a.noise_floor_db
 
@@ -359,17 +478,17 @@ def plan(a: Analysis, target: str = "youtube") -> Plan:
     else:
         S.append(Stage("denoise", False, _("quiet background ({db:.0f} dBFS after leveling)").format(db=projected)))
 
-    # What denoising cannot remove is left to a gentle downward expander in the
-    # pauses: threshold between noise and speech, depth only what is still needed.
-    residual = needed - reduction
-    if residual > NOISE_MIN_REDUCTION and a.snr_db > 8:
-        depth = _clamp(residual + 3, 6, 18)
-        thr = noise - reduction + min(a.snr_db * 0.4, 12)
-        S.append(Stage("expander", True, _("pauses lowered by up to {db:.0f} dB").format(db=depth),
-                       f"agate=threshold={10 ** (thr / 20):.6f}:range={10 ** (-depth / 20):.4f}:ratio=3"
-                       f":attack=8:release=250:knee=6:detection=rms"))
+    # Pauses: what is not speech (breaths, keyboard, clicks, fan between words) is
+    # lowered, driven by voice activity, before the leveler and compressor could
+    # raise it. Depth: whatever brings the loudest of it under PAUSE_TARGET.
+    pause_after = a.pause_db + lufs - float(a.loudness.get("input_i", lufs) or lufs) - reduction
+    if a.speech and 0.02 < a.active_ratio < 0.99 and pause_after - PAUSE_TARGET > NOISE_MIN_REDUCTION:
+        depth = round(_clamp(pause_after - PAUSE_TARGET, 6, PAUSE_MAX_DEPTH))
+        S.append(Stage("pauses", True, _("breaths and noise between words lowered by {db} dB").format(db=depth),
+                       "asendcmd=f={pause_commands},volume@pauses=volume=1:eval=frame:precision=float",
+                       param=depth))
     else:
-        S.append(Stage("expander", False, _("pauses already quiet")))
+        S.append(Stage("pauses", False, _("pauses already quiet")))
 
     if a.speech_spread_db > LEVELER_SPREAD:
         S.append(Stage("leveler", True, _("speech level varies by {db:.1f} dB").format(db=a.speech_spread_db),
@@ -467,8 +586,9 @@ def speech_loss(a: Analysis, src: str, head: list[str], p: Plan) -> float:
             break
     after = _trial_levels(src, head, ",".join(upto))
     gain = next((float(s.filter[7:-2]) for s in p.stages if s.name == "preamp" and s.enabled), 0.0)
-    threshold = a.noise_floor_db + ACTIVE_ABOVE_NOISE
-    pairs = [(b, c) for b, c in zip(a.levels, after) if b > threshold]
+    # Frames the voice activity detector marked as speech (and not silent).
+    pairs = [(b, c) for b, c, sp in zip(a.levels, after, a.speech or [False] * len(a.levels))
+             if sp and b > SILENCE_DB]
     if not pairs:
         return 0.0
     return statistics.median(b + gain - c for b, c in pairs)
@@ -528,6 +648,12 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
     if not a.has_audio or a.active_ratio == 0:
         raise AudioError(_("the recording has no usable audio"))
     p = plan(a, target)
+    pauses = next((s for s in p.stages if s.name == "pauses" and s.enabled), None)
+    tmp = tempfile.TemporaryDirectory(prefix="rec0-audio-")
+    if pauses:
+        cmds = Path(tmp.name) / "pauses.cmd"
+        cmds.write_text(pause_commands(a, pauses.param))
+        pauses.filter = pauses.filter.replace("{pause_commands}", _quote(str(cmds)))
     step("verify", 0.2)
     guard_denoise(a, src, head, p)
     step("measure", 0.3)
