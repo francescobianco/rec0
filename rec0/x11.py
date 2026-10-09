@@ -247,6 +247,18 @@ class X11:
                 out.append(X11Window(wid, title, wm_class))
         return out
 
+    def workarea(self) -> Rect | None:
+        """Usable desktop area (without panels and docks) of the current workspace."""
+        if not self._dpy:
+            return None
+        area = self._cardinals(self.root, "_NET_WORKAREA")
+        if len(area) < 4:
+            return None
+        desktop = (self._cardinals(self.root, "_NET_CURRENT_DESKTOP") or [0])[0]
+        i = 4 * desktop if len(area) >= 4 * (desktop + 1) else 0
+        x, y, w, h = area[i:i + 4]
+        return Rect(x, y, w, h)
+
     def monitors(self) -> list[dict]:
         if not self._dpy:
             return []
@@ -297,3 +309,7 @@ def client_windows() -> list[X11Window]:
 
 def monitors() -> list[dict]:
     return _shared(X11.monitors)
+
+
+def workarea() -> Rect | None:
+    return _shared(X11.workarea)

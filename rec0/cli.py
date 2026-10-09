@@ -227,7 +227,7 @@ def cmd_record(args) -> int:
         from .project import Rect
         from .scenes import bubble_rect
 
-        r = bubble_rect(cam.bubble, captures.monitor)
+        r = bubble_rect(cam.bubble, captures.area)
         bubble = Bubble(r.width, r.x, r.y,
                         on_move=lambda x, y, size: director.set_bubble(Rect(x, y, size, size)))
         rec.on_bubble_frame = bubble.frame

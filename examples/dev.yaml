@@ -14,7 +14,6 @@ camera:
 
 screen:
   monitor: primary
-  margin: 40
 
 windows:
   - match: chrome

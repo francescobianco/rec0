@@ -523,7 +523,7 @@ camera:
 # window title or class: for a browser tab, use its title.
 screen:
   monitor: primary
-  margin: 40                 # virtual desktop border around the real screen
+  margin: 0                  # virtual desktop border around the real screen (0: corners match)
 
 windows:
   - match: Firefox

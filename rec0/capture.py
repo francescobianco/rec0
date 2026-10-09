@@ -371,6 +371,7 @@ class Captures:
         self.log = log
         self.camera: Device | None = None
         self.monitor: Rect | None = None      # absolute geometry of the captured monitor
+        self.area: Rect | None = None         # its usable part (without panels): the virtual desktop
         self.portal: PortalSession | None = None
         self.prepared = False
 
@@ -398,7 +399,18 @@ class Captures:
             self.camera = find_camera(p.camera.device)
         if p.windows:
             self.monitor = self._prepare_monitor()
+            self.area = self._usable_area(self.monitor)
         self.prepared = True
+
+    def _usable_area(self, monitor: Rect) -> Rect:
+        """The monitor minus panels and docks (_NET_WORKAREA), when known."""
+        work = x11.workarea() if self.backend == "x11" and self.project.screen.monitor != "test" else None
+        if work is None:
+            return monitor
+        x1, y1 = max(monitor.x, work.x), max(monitor.y, work.y)
+        x2 = min(monitor.x + monitor.width, work.x + work.width)
+        y2 = min(monitor.y + monitor.height, work.y + work.height)
+        return Rect(x1, y1, x2 - x1, y2 - y1) if x2 - x1 > 100 and y2 - y1 > 100 else monitor
 
     def _prepare_monitor(self) -> Rect:
         spec = self.project.screen.monitor

@@ -44,6 +44,7 @@ SCREEN_PAD, CAMERA_PAD = "sink_1", "sink_2"
 # when focus moves to a private page the screen layer is frozen before any of
 # its frames can be composed (focus is polled every 100 ms).
 SCREEN_DELAY = 0.4
+WINDOW_EDGE_RGB = (0.13, 0.13, 0.14)   # frame around shared windows: dark gray
 BUBBLE_FPS = 20
 
 
@@ -130,6 +131,8 @@ class Recorder:
                 f"min-threshold-time={int(SCREEN_DELAY * Gst.SECOND)} "
                 f"! valve name=screenvalve drop={'true' if self.frozen else 'false'} "
                 f"! videocrop name=screencrop left={crop[0]} top={crop[1]} right={crop[2]} bottom={crop[3]} "
+                # Rounded frame around the window (see _on_screen_draw).
+                f"! videoconvert ! video/x-raw,format=BGRA ! cairooverlay name=screenmask "
                 # Repeats the last frame while the valve is closed (frozen screen).
                 f"! videoscale ! imagefreeze name=screenfreeze is-live=true allow-replace=true "
                 f"! {norm} ! mix.{SCREEN_PAD}")
@@ -289,6 +292,10 @@ class Recorder:
         bubblesink = self.pipeline.get_by_name("bubblesink")
         if bubblesink is not None:
             bubblesink.connect("new-sample", self._on_bubble_sample)
+        smask = self.pipeline.get_by_name("screenmask")
+        if smask is not None:
+            smask.connect("caps-changed", self._on_screen_caps)
+            smask.connect("draw", self._on_screen_draw)
         mask = self.pipeline.get_by_name("cammask")
         if mask is not None:
             mask.connect("caps-changed", self._on_mask_caps)
@@ -429,6 +436,39 @@ class Recorder:
         s = caps.get_structure(0)
         self._mask_size = (s.get_value("width"), s.get_value("height"))
 
+    def _on_screen_caps(self, _overlay, caps):
+        s = caps.get_structure(0)
+        self._screen_size = (s.get_value("width"), s.get_value("height"))
+
+    def _on_screen_draw(self, _overlay, cr, _ts, _dur):
+        """Rounded frame around a shared window: outside the window, inside the crop."""
+        layer = self.frame.screen if self.frame else None
+        w, h = getattr(self, "_screen_size", (0, 0))
+        if not layer or layer.edge <= 0 or not w:
+            return
+        e, r = layer.edge, max(layer.radius, layer.edge)
+
+        def rounded(x, y, rw, rh, rad):
+            cr.new_sub_path()
+            cr.arc(x + rw - rad, y + rad, rad, -math.pi / 2, 0)
+            cr.arc(x + rw - rad, y + rh - rad, rad, 0, math.pi / 2)
+            cr.arc(x + rad, y + rh - rad, rad, math.pi / 2, math.pi)
+            cr.arc(x + rad, y + rad, rad, math.pi, 3 * math.pi / 2)
+            cr.close_path()
+
+        # Transparent outside the rounded outline...
+        cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
+        cr.set_operator(cairo.OPERATOR_CLEAR)
+        cr.rectangle(0, 0, w, h)
+        rounded(0, 0, w, h, r)
+        cr.fill()
+        # ...and an opaque ring of `e` pixels between it and the window.
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgb(*WINDOW_EDGE_RGB)
+        rounded(0, 0, w, h, r)
+        rounded(e, e, w - 2 * e, h - 2 * e, max(1.0, r - e))
+        cr.fill()
+
     def _on_mask_draw(self, _overlay, cr, _ts, _dur):
         w, h = self._mask_size
         if not self.circle or not w:
@@ -491,7 +531,7 @@ class Director:
         shown = self.window if (scene == "share" and self.window) else None
         return compose(self.project, scene, self.monitor, shown.rect if shown else None,
                        previous=getattr(self, "frame", None), bubble=self.bubble,
-                       fullscreen=bool(shown and shown.fullscreen))
+                       fullscreen=bool(shown and shown.fullscreen), area=self.recorder.captures.area)
 
     def _placement(self, scene: str):
         cam = self.project.camera

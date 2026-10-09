@@ -666,8 +666,7 @@ class Window(Adw.ApplicationWindow):
         cam = self.project.camera
         if self.bubble or not (cam and cam.bubble and self.settings.get_boolean("show-bubble")):
             return
-        monitor = self.captures.monitor or self._primary_monitor()
-        r = bubble_rect(cam.bubble, monitor)
+        r = bubble_rect(cam.bubble, self.captures.area or self._primary_monitor())
         self.bubble = Bubble(r.width, r.x, r.y, on_move=self._on_bubble_moved)
         self.recorder.on_bubble_frame = self.bubble.frame
         self.bubble.start()

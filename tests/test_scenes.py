@@ -11,23 +11,49 @@ def project(**over):
     return parse(data)
 
 
-def test_window_keeps_real_position_at_same_scale():
+WORK = Rect(0, 32, 1920, 1048)   # GNOME's top bar takes the first 32 px
+
+
+def test_window_keeps_real_position_and_gets_an_outside_frame():
     layer = window_layer(project(), MONITOR, Rect(100, 50, 800, 600))
-    assert layer.rect == Rect(100, 50, 800, 600)
-    assert layer.crop == (100, 50, 1920 - 900, 1080 - 650)
+    # Crop and rect widened by the frame (3 px at 1:1 scale) around the window.
+    assert layer.crop == (97, 47, 1920 - 903, 1080 - 653)
+    assert layer.rect == Rect(97, 47, 806, 606)
+    assert layer.edge == 3 and layer.radius == 12
 
 
-def test_margin_scales_screen_into_virtual_desktop():
+def test_large_aspect_mismatch_is_fitted_without_distortion():
     p = project(screen={"margin": 108})
-    # (1080 - 216) / 1080 = 0.8 -> screen drawn at 1536x864 centred
-    layer = window_layer(p, MONITOR, Rect(0, 0, 1920, 1080))
-    assert layer.rect == Rect(192, 108, 1536, 864)
+    # (1920-216):(1080-216) is far from 16:9: uniform 0.8 scale, centred.
+    layer = window_layer(p, MONITOR, None)
+    assert layer.rect == Rect(192, 108, 1536, 864) and layer.edge == 0
 
 
-def test_window_is_clipped_to_monitor():
+def test_work_area_corners_are_canvas_corners():
+    from rec0.scenes import to_canvas
+    p = project()
+    bubble = Rect(0, 32 + 1048 - 200, 200, 200)      # bottom-left corner of the work area
+    r = to_canvas(p, WORK, bubble)
+    assert (r.x, r.y + r.height) == (0, 1080)
+    top_right = to_canvas(p, WORK, Rect(1920 - 200, 32, 200, 200))
+    assert (top_right.x + top_right.width, top_right.y) == (1920, 0)
+
+
+def test_maximized_window_fills_the_video_without_frame():
+    layer = window_layer(project(), MONITOR, WORK, fullscreen=True, area=WORK)
+    assert layer.rect == Rect(0, 0, 1920, 1080)
+    assert layer.crop == (0, 32, 0, 0) and layer.edge == 0
+
+
+def test_fullscreen_window_is_clipped_to_the_work_area_and_fills():
+    layer = window_layer(project(), MONITOR, MONITOR, fullscreen=True, area=WORK)
+    assert layer.rect == Rect(0, 0, 1920, 1080) and layer.crop == (0, 32, 0, 0)
+
+
+def test_window_is_clipped_to_the_screen():
     layer = window_layer(project(), MONITOR, Rect(-100, -100, 600, 400))
-    assert layer.crop == (0, 0, 1420, 780)
-    assert layer.rect == Rect(0, 0, 500, 300)
+    assert layer.crop[:2] == (0, 0)
+    assert layer.rect.x == 0 and layer.rect.y == 0
 
 
 def test_scenes():
@@ -37,7 +63,8 @@ def test_scenes():
     assert cam.screen.alpha == 0
     share = compose(p, "share", MONITOR, Rect(10, 10, 500, 500), previous=cam)
     assert share.camera.rect == p.camera.overlay.rect
-    assert share.screen.alpha == 1 and share.screen.rect == Rect(10, 10, 500, 500)
+    # the window plus its 3 px frame
+    assert share.screen.alpha == 1 and share.screen.rect == Rect(7, 7, 506, 506)
     back = compose(p, "camera", MONITOR, None, previous=share)
     # the window fades out where it was
     assert back.screen.rect == share.screen.rect and back.screen.alpha == 0
@@ -68,22 +95,3 @@ def test_overlay_follows_bubble():
     f = compose(p, "share", MONITOR, Rect(0, 0, 1920, 1080), bubble=b)
     # same 0.8 scale and offset as the screen layer: it covers the captured bubble exactly
     assert f.camera.rect == Rect(192 + round(1680 * 0.8), 108 + round(840 * 0.8), 160, 160)
-
-
-def test_fullscreen_window_fills_the_canvas():
-    p = project(screen={"margin": 108})
-    layer = window_layer(p, MONITOR, Rect(0, 0, 1920, 1080), fullscreen=True)
-    assert layer.rect == Rect(0, 0, 1920, 1080)
-
-
-def test_maximized_window_under_the_top_bar_is_stretched_to_fill():
-    p = project(screen={"margin": 40})
-    layer = window_layer(p, MONITOR, Rect(0, 32, 1920, 1048), fullscreen=True)
-    assert layer.rect == Rect(0, 0, 1920, 1080)
-    assert layer.crop == (0, 32, 0, 0)
-
-
-def test_fullscreen_with_a_different_aspect_is_fitted_not_distorted():
-    p = project()
-    layer = window_layer(p, MONITOR, Rect(0, 0, 1080, 1080), fullscreen=True)
-    assert layer.rect == Rect(420, 0, 1080, 1080)
