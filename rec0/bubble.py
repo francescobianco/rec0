@@ -27,16 +27,27 @@ from pathlib import Path
 from typing import Callable
 
 RING = 0.03   # ring width as a fraction of the diameter, shared with the video mask
+OUTLINE = 1.0   # px of dark grey just outside the white ring
 DOUBLE_CLICK_MS = 400
 MIN_SIZE = 80          # px, smallest bubble the handle allows
 MAX_SIZE_RATIO = 0.6   # largest bubble, as a fraction of the screen's short side
 
 
+def ring_width(d: float) -> float:
+    return max(2.0, d * RING)
+
+
 def draw_ring(cr, d: float):
-    lw = max(2.0, d * RING)
+    """White ring around the webcam circle, with a thin dark outline that keeps it
+    visible on light backgrounds (the on-screen bubble and the video share it)."""
+    lw = ring_width(d)
     cr.set_line_width(lw)
     cr.set_source_rgba(1, 1, 1, 0.9)
-    cr.arc(d / 2, d / 2, d / 2 - lw / 2, 0, 2 * math.pi)
+    cr.arc(d / 2, d / 2, d / 2 - OUTLINE - lw / 2, 0, 2 * math.pi)
+    cr.stroke()
+    cr.set_line_width(OUTLINE)
+    cr.set_source_rgba(0.2, 0.2, 0.2, 0.9)
+    cr.arc(d / 2, d / 2, d / 2 - OUTLINE / 2, 0, 2 * math.pi)
     cr.stroke()
 
 
@@ -52,11 +63,10 @@ def handle_corner(x: int, y: int, size: int, area: tuple[int, int, int, int]) ->
 
 
 def handle_center(size: int, corner: tuple[int, int]) -> tuple[float, float, float]:
-    """(cx, cy, radius) of the handle, inside the circle: on screen the video
-    overlay covers the bubble, so the handle never shows in a whole-screen capture."""
+    """(cx, cy, radius) of the handle: on the white ring, in the corner's direction."""
     r = size / 2
-    hr = max(6.0, min(10.0, size * 0.04))
-    k = (r - max(2.0, size * RING) - hr - 3) / math.sqrt(2)
+    hr = max(6.0, min(9.0, size * 0.035))
+    k = (r - OUTLINE - ring_width(size) / 2) / math.sqrt(2)
     return r + corner[0] * k, r + corner[1] * k, hr
 
 
@@ -277,14 +287,22 @@ def main(argv: list[str]) -> int:
         win.set_size_request(new, new)
         win.resize(new, new)
         win.move(nx, ny)
-        if win.get_window():
-            win.get_window().input_shape_combine_region(_circle_region(new), 0, 0)
+        update_input()
         win.queue_draw()
+
+    def update_input():
+        # The handle sits on the ring, half outside the circle: clickable only while shown.
+        gw = win.get_window()
+        if gw:
+            shown = state["hover"] or click.get("resize")
+            handle = handle_center(state["size"], state["corner"]) if shown else None
+            gw.input_shape_combine_region(_circle_region(state["size"], handle), 0, 0)
 
     def on_enter(_w, _ev):
         if not click["press"]:
             state["corner"] = handle_corner(*win.get_position(), state["size"], work_area())
         state["hover"] = True
+        update_input()
         win.queue_draw()
         return False
 
@@ -292,6 +310,7 @@ def main(argv: list[str]) -> int:
         if ev.detail != Gdk.NotifyType.INFERIOR and not click["resize"]:
             state["hover"] = state["over_handle"] = False
             set_cursor(None)
+            update_input()
             win.queue_draw()
         return False
 
@@ -340,6 +359,7 @@ def main(argv: list[str]) -> int:
             state["over_handle"] = state["hover"] and on_handle(ev.x, ev.y)
             if not state["over_handle"]:
                 set_cursor(None)
+            update_input()
             win.queue_draw()
             return True
         if ev.button == 1 and not click["dragging"]:
@@ -417,11 +437,20 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-def _circle_region(size: int):
-    """Clicks outside the circle go through to the window below."""
+def _circle_region(size: int, handle: tuple[float, float, float] | None = None):
+    """Clicks outside the circle (and the handle, when shown) go through to the window below."""
     import cairo
 
     region = cairo.Region()
+    if handle:
+        cx, cy, hr = handle
+        hr += 2
+        for row in range(max(0, int(cy - hr)), min(size, int(math.ceil(cy + hr)))):
+            dy = row + 0.5 - cy
+            half = math.sqrt(max(0.0, hr * hr - dy * dy))
+            x0, x1 = max(0, int(cx - half)), min(size, int(math.ceil(cx + half)))
+            if x1 > x0:
+                region.union(cairo.RectangleInt(x0, row, x1 - x0, 1))
     r = size / 2
     for row in range(size):
         dy = row + 0.5 - r

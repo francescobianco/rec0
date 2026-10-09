@@ -28,6 +28,8 @@ All notable changes to rec0 are documented here. The format follows
 - When the whole screen is shared (Wayland) and its shape differs from the
   video's (a 16:10 laptop in a 16:9 video), it is framed with rounded corners
   like a shared window, between the bands of background.
+- The bubble's resize handle sits on its white ring, and the ring has a thin
+  dark outline (in the video too) that keeps it visible on light backgrounds.
 - The webcam bubble can be resized: hovering it shows a handle in the
   bottom-right corner, or on the opposite side when the bubble is near the
   right or bottom edge of the screen. The video overlay follows its size, and

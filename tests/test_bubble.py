@@ -15,11 +15,14 @@ def test_handle_flips_near_right_or_bottom_edge():
     assert handle_corner(1680, 840, 200, AREA) == (-1, -1)     # default bottom-right position
 
 
-def test_handle_inside_the_circle():
+def test_handle_on_the_ring():
+    from rec0.bubble import OUTLINE, ring_width
     for corner in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
         cx, cy, hr = handle_center(200, corner)
-        assert ((cx - 100) ** 2 + (cy - 100) ** 2) ** 0.5 + hr < 100
+        distance = ((cx - 100) ** 2 + (cy - 100) ** 2) ** 0.5
+        assert abs(distance - (100 - OUTLINE - ring_width(200) / 2)) < 0.01   # centred on the white ring
         assert (cx > 100) == (corner[0] > 0) and (cy > 100) == (corner[1] > 0)
+        assert hr <= cx <= 200 - hr and hr <= cy <= 200 - hr                    # inside the bubble's window
 
 
 def test_resize_keeps_the_opposite_corner():
