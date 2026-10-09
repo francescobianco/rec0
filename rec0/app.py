@@ -423,8 +423,6 @@ class Window(Adw.ApplicationWindow):
         self.director.set_mode("auto" if auto else "camera")
         self._on_scene(self.director.scene, None)
         self._start_preview()
-        # Shown whenever rec0 is not focused, also before recording, so it can be placed.
-        self._start_bubble()
 
     def _fit_when_ready(self, frame, _clock):
         # Wait until the preview has a real size (the webcam can take a while).
@@ -534,6 +532,8 @@ class Window(Adw.ApplicationWindow):
         self._inhibit_cookie = self.get_application().inhibit(
             self, Gtk.ApplicationInhibitFlags.SUSPEND | Gtk.ApplicationInhibitFlags.IDLE
             | Gtk.ApplicationInhibitFlags.LOGOUT, _("Recording a video"))
+        # The bubble exists only while recording (and shows when rec0 is not focused).
+        self._start_bubble()
         self.status.set_label(_("Recording"))
         self.status.add_css_class("recording")
         self.timer.remove_css_class("dim-label")
@@ -576,6 +576,7 @@ class Window(Adw.ApplicationWindow):
     def _on_finished(self, path):
         if path is None:
             return   # preview stopped
+        self._stop_bubble()
         if self._inhibit_cookie:
             self.get_application().uninhibit(self._inhibit_cookie)
             self._inhibit_cookie = 0
@@ -879,7 +880,7 @@ class Application(Adw.Application):
     def _set_bubble_enabled(self, enabled: bool):
         settings.get().set_boolean("show-bubble", enabled)
         win = self.window
-        if win and win.project:
+        if win and win.recording:
             if enabled:
                 win._start_bubble()
             else:
@@ -897,7 +898,7 @@ class Application(Adw.Application):
         countdown.connect("notify::value", lambda r, _p: s.set_int("countdown", int(r.get_value())))
         group.add(countdown)
         bubble = Adw.SwitchRow(title=_("Webcam Bubble"),
-                               subtitle=_("Show your webcam on screen when rec0 is not focused, to place it before recording"),
+                               subtitle=_("While recording, show your webcam on screen when rec0 is not focused"),
                                active=s.get_boolean("show-bubble"))
         bubble.connect("notify::active", lambda r, _p: self._set_bubble_enabled(r.get_active()))
         group.add(bubble)
