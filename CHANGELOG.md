@@ -17,6 +17,11 @@ All notable changes to rec0 are documented here. The format follows
   screencast API (no dialog, no whole desktop, rec0's own window never shows),
   followed as it moves, resizes or closes. With the first version of the
   extension rec0 falls back to the whole screen.
+- Wayland window streams no longer carry the pointer: Mutter drew it onto
+  recycled buffers holding older frames, so windows flickered back in time
+  and pointers showed twice. The pointer is not drawn on Wayland for now.
+- The preview shows the webcam where the on-screen bubble is, or will appear
+  when recording starts, instead of the configured overlay position.
 - On Wayland a window's class is its app id: `match: gnome-terminal` now
   also matches `org.gnome.Terminal` (separators are ignored), and privacy
   rules recognise Flatpak and Wayland ids such as `org.mozilla.Thunderbird`.

@@ -450,6 +450,7 @@ class Window(Adw.ApplicationWindow):
             self.alert(_("Sources Not Available"), str(e))
             return
         self.director = Director(self.recorder, on_scene=self._on_scene)
+        self.director.set_bubble(self._expected_bubble())   # the preview shows it where it will be
         self.mode_buttons["share"].set_sensitive(bool(project.windows))
         auto = self.captures.follows_focus
         self.mode_buttons["auto"].set_sensitive(auto)
@@ -765,17 +766,28 @@ class Window(Adw.ApplicationWindow):
             self.bubble.stop()
             self.bubble = None
         if self.director:
-            self.director.set_bubble(None)
+            self.director.set_bubble(self._expected_bubble())
 
     def _update_bubble(self):
         if not self.bubble:
             return
         if self.is_active():
             self.bubble.hide()
-            self.director.set_bubble(None)
+            self.director.set_bubble(self._expected_bubble())   # where it is, hidden or not
         else:
             self.bubble.show()
             self._on_bubble_moved(*self.bubble.pos, self.bubble.size)
+
+    def _expected_bubble(self) -> Rect | None:
+        """Where the on-screen bubble is, or will appear when recording starts: the webcam
+        overlay sits there in the preview too, so nothing moves when recording begins.
+        None when there is no bubble (the overlay keeps its configured place)."""
+        cam = self.project.camera if self.project else None
+        if not (cam and cam.bubble and self.settings.get_boolean("show-bubble") and self.captures):
+            return None
+        if self.bubble:
+            return Rect(*self.bubble.pos, self.bubble.size, self.bubble.size)
+        return bubble_rect(cam.bubble, self.captures.area or self._primary_monitor())
 
     def _on_bubble_activated(self, time: int):
         # Double click on the bubble (or focus given to it): the main window comes
@@ -986,6 +998,8 @@ class Application(Adw.Application):
                 win._start_bubble()
             else:
                 win._stop_bubble()
+        elif win and win.director:
+            win.director.set_bubble(win._expected_bubble())
 
     def _preferences(self):
         s = settings.get()

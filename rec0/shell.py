@@ -208,8 +208,10 @@ class WindowCast:
         self._session = bus.call_sync(MUTTER_CAST, MUTTER_CAST_PATH, MUTTER_CAST, "CreateSession",
                                       GLib.Variant("(a{sv})", ({},)), GLib.VariantType("(o)"),
                                       Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
+        # Never embedded: Mutter draws a moving pointer onto a recycled buffer that still
+        # holds an older frame, so the window jumps back in time and pointers double.
         props = {"window-id": GLib.Variant("t", self.window_id),
-                 "cursor-mode": GLib.Variant("u", CURSOR_EMBEDDED if self.cursor else CURSOR_HIDDEN)}
+                 "cursor-mode": GLib.Variant("u", CURSOR_HIDDEN)}
         stream = bus.call_sync(MUTTER_CAST, self._session, MUTTER_CAST + ".Session", "RecordWindow",
                                GLib.Variant("(a{sv})", (props,)), GLib.VariantType("(o)"),
                                Gio.DBusCallFlags.NONE, 2000, None).unpack()[0]
