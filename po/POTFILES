@@ -12,6 +12,7 @@ rec0/project.py
 rec0/recorder.py
 rec0/scenes.py
 rec0/settings.py
+rec0/toasts.py
 rec0/x11.py
 data/io.github.francescobianco.Rec0.desktop.in
 data/io.github.francescobianco.Rec0.metainfo.xml.in

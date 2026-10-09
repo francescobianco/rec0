@@ -21,6 +21,7 @@ from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
 from .project import ProjectError, Rect, load, template  # noqa: E402
 from .recorder import Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
+from .toasts import CSS as TOAST_CSS, TopToastOverlay  # noqa: E402
 
 CSS = b"""
 /* The picture is clipped with a larger radius than the edge: a wider curve cuts
@@ -130,9 +131,8 @@ class Window(Adw.ApplicationWindow):
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=self._primary_menu(),
                                        primary=True, tooltip_text=_("Main Menu")))
 
-        self.toasts = Adw.ToastOverlay()
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE)
-        self.toasts.set_child(self.stack)
+        self.toasts = TopToastOverlay(self.stack)
         self.stack.add_named(self._build_start_page(), "start")
         self.stack.add_named(self._build_main(), "main")
 
@@ -617,9 +617,7 @@ class Window(Adw.ApplicationWindow):
         if report:
             title = _("Saved {name}, audio at {lufs:.0f} LUFS").format(
                 name=path.name, lufs=report.result["integrated_lufs"])
-        toast = Adw.Toast(title=GLib.markup_escape_text(title), button_label=_("_Play"),
-                          action_name="win.open-last-recording", timeout=8)
-        self.toasts.add_toast(toast)
+        self.toasts.add(title, _("_Play"), "win.open-last-recording", timeout=8)
         if not self.is_active():
             note = Gio.Notification.new(_("Recording Saved"))
             note.set_body(path.name)
@@ -769,7 +767,7 @@ class Window(Adw.ApplicationWindow):
         return False
 
     def toast(self, message: str):
-        self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(message), timeout=4))
+        self.toasts.add(message)
         self.get_application().log(message)
 
     def alert(self, heading: str, body: str):
@@ -800,7 +798,7 @@ class Application(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         css = Gtk.CssProvider()
-        css.load_from_data(CSS, len(CSS))
+        css.load_from_data(CSS + TOAST_CSS, len(CSS + TOAST_CSS))
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         if not config.PKGDATADIR:

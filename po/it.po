@@ -215,8 +215,8 @@ msgstr "Secondi di attesa prima dell'inizio della registrazione"
 msgid "Webcam Bubble"
 msgstr "Bolla della webcam"
 
-msgid "Show your webcam on screen while recording, when rec0 is not focused"
-msgstr "Mostra la webcam sullo schermo durante la registrazione, quando rec0 non è in primo piano"
+msgid "Show your webcam on screen when rec0 is not focused, to place it before recording"
+msgstr "Mostra la webcam sullo schermo quando rec0 non è in primo piano, per posizionarla prima di registrare"
 
 msgid "Optimize Audio"
 msgstr "Ottimizza l'audio"
@@ -497,6 +497,9 @@ msgstr "salvato: {path}"
 msgid "finishing…"
 msgstr "finalizzazione…"
 
+msgid "recording did not start (is the webcam used by another program?)"
+msgstr "la registrazione non è partita (la webcam è usata da un altro programma?)"
+
 msgid "recording to {path} — Ctrl+C to stop"
 msgstr "registrazione in {path} — Ctrl+C per fermare"
 
@@ -762,3 +765,6 @@ msgstr "Primo piano"
 
 msgid "Share"
 msgstr "Condivisione"
+
+msgid "Close"
+msgstr "Chiudi"

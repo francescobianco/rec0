@@ -15,6 +15,7 @@ sources = files(
   'recorder.py',
   'scenes.py',
   'settings.py',
+  'toasts.py',
   'x11.py',
 )
 install_data(sources, install_dir: pkgdatadir / 'rec0')
