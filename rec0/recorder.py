@@ -179,10 +179,12 @@ class Recorder:
             pw = min(PREVIEW_WIDTH, cw)
             ph = round(pw * ch / cw) // 2 * 2
             parts.append(
-                # max-rate is lowered while recording with rec0 in the background.
+                # max-rate is lowered while recording with rec0 in the background. No
+                # framerate in the caps: the rate changes mid-stream, and a fixed one would
+                # fail to negotiate (stopping the whole pipeline, recording included).
                 f"vt. ! queue max-size-buffers=2 leaky=downstream ! videorate name=prevrate drop-only=true "
                 f"max-rate={PREVIEW_FPS} ! videoscale ! videoconvert "
-                f"! video/x-raw,format=RGB,width={pw},height={ph},framerate={PREVIEW_FPS}/1 "
+                f"! video/x-raw,format=RGB,width={pw},height={ph} "
                 f"! appsink name=preview emit-signals=true max-buffers=1 drop=true sync=false")
 
         if output is None:

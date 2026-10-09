@@ -164,3 +164,25 @@ def test_system_sound_is_its_own_track_and_mixed_in_at_the_end(tmp_path):
     assert postprocess.finalize(p, out) is None               # optimization off: just mixed
     assert audio.audio_tracks(out) == 1
     assert audio.audio_tracks(postprocess.original_path(out)) == 2
+
+
+def test_preview_rate_changes_while_recording(tmp_path):
+    # Going to the background lowers the preview rate mid-recording: the preview
+    # branch must renegotiate on its own, without stopping the recording.
+    p, rec, d = _session(tmp_path)
+    frames = []
+    rec.on_preview = lambda *a: frames.append(1)
+    out = p.output_path()
+    rec.start(d.frame, out)
+    counts = []
+    errors = _run(rec, p, [
+        (500, lambda: rec.set_preview_rate(10)),
+        (900, lambda: counts.append(len(frames))),
+        (1300, lambda: counts.append(len(frames))),
+        (1400, lambda: rec.set_preview_rate(30)),
+    ], until=2200)
+    assert not errors
+    assert counts[1] > counts[0]          # the preview kept going at the lower rate
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                            str(out)], capture_output=True, text=True).stdout
+    assert float(probe) > 1.5
