@@ -16,7 +16,12 @@ def test_pick_camera_caps_prefers_full_framerate():
             "image/jpeg, width=(int)1280, height=(int)720, framerate=(fraction){ 30/1, 15/1 }; "
             "video/x-raw, format=(string)YUY2, width=(int)1920, height=(int)1080, framerate=(fraction)5/1; "
             "video/x-raw, format=(string)YUY2, width=(int)640, height=(int)480, framerate=(fraction)30/1")
-    assert pick_camera_caps(caps, 30, (1280, 720)) == "image/jpeg,width=1280,height=720,framerate=30/1 ! jpegdec"
+    # MJPEG, decoded on the GPU or in software depending on the machine
+    assert pick_camera_caps(caps, 30, (1280, 720)).startswith("image/jpeg,width=1280,height=720,framerate=30/1 ! ")
+    # A GPU decoder that can scale must be pinned to the native size: otherwise the
+    # bubble branch, negotiated through the tee, shrinks the whole webcam (356x200).
+    chain = pick_camera_caps(caps, 30, (1280, 720))
+    assert "vapostproc" not in chain or chain.endswith("video/x-raw,width=1280,height=720")
     assert pick_camera_caps(caps, 30, (320, 180)) == "video/x-raw,format=YUY2,width=640,height=480,framerate=30/1"
 
 

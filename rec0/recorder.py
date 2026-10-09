@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import replace
 import threading
 import time
 from pathlib import Path
@@ -29,6 +30,7 @@ from gi.repository import GstController  # noqa: E402
 gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
+from . import hw  # noqa: E402
 from .bubble import draw_ring  # noqa: E402
 from .i18n import _  # noqa: E402
 
@@ -57,11 +59,14 @@ def has_element(name: str) -> bool:
 
 
 def video_encoder(bitrate: int, fps: int) -> str:
+    """Raw video in, H.264 out: on the GPU when possible (see hw.py)."""
+    if hw.h264_encoder():
+        return f"video/x-raw,format=NV12 ! vah264lpenc bitrate={bitrate} key-int-max={fps * 2}"
     if has_element("x264enc"):
-        return (f"x264enc bitrate={bitrate} speed-preset=veryfast tune=zerolatency key-int-max={fps * 2} "
-                f"! video/x-h264,profile=high")
+        return (f"video/x-raw,format=I420 ! x264enc bitrate={bitrate} speed-preset=veryfast tune=zerolatency "
+                f"key-int-max={fps * 2} ! video/x-h264,profile=high")
     if has_element("openh264enc"):
-        return f"openh264enc bitrate={bitrate * 1000} complexity=low gop-size={fps * 2}"
+        return f"video/x-raw,format=I420 ! openh264enc bitrate={bitrate * 1000} complexity=low gop-size={fps * 2}"
     raise RuntimeError(_("no H.264 encoder available (install gstreamer1.0-plugins-ugly)"))
 
 
@@ -117,6 +122,7 @@ class Recorder:
         self._crops: dict[int, tuple] = {}
         self.on_window_lost: Callable | None = None   # (key) a window's capture failed
         self.audio_tracks = 0
+        self.scale = 1.0                 # canvas size relative to the project's (preview < 1)
         self.frame_rgb = frame_rgb(project.screen.frame)   # frame around windows; None = no frame
         self.on_bubble_frame: Callable | None = None   # (bgra, w, h) from a streaming thread
         self.on_preview: Callable | None = None
@@ -133,15 +139,17 @@ class Recorder:
         self.captures.prepare()
         cam = p.camera
         pads = ["sink_0::zorder=0"]
-        parts = [f"{background_description(p)} ! queue ! mix.sink_0"]
+        cw, ch = self.canvas
+        parts = [f"{background_description(p, (cw, ch))} ! queue ! mix.sink_0"]
         norm = f"videorate ! video/x-raw,framerate={fps}/1,pixel-aspect-ratio=1/1"
 
-        camera = self.captures.camera_source((cam.closeup.rect.width, cam.closeup.rect.height)) if cam else None
+        camera = self.captures.camera_source((round(cam.closeup.rect.width * self.scale),
+                                              round(cam.closeup.rect.height * self.scale))) if cam else None
         if camera and frame.camera:
             pl = cam.closeup if frame.camera.rect == cam.closeup.rect or not cam.overlay else cam.overlay
             self._camcrop_aspect = self._aspect(pl)
             self.circle = pl.circle
-            pads.append(f"{CAMERA_PAD}::zorder={CAMERA_Z} " + _pad_props(CAMERA_PAD, frame.camera, pl.fit))
+            pads.append(f"{CAMERA_PAD}::zorder={CAMERA_Z} " + _pad_props(CAMERA_PAD, self._scaled(frame.camera), pl.fit))
             parts.append(
                 # No scaling before the tee: caps are negotiated across both branches,
                 # and the small bubble branch would drag the video branch down with it.
@@ -164,14 +172,16 @@ class Recorder:
         parts.insert(0,
             f"compositor name=mix background=black ignore-inactive-pads=true "
             f"latency={int((SCREEN_DELAY + 0.1) * Gst.SECOND) if p.windows else 0} {' '.join(pads)} "
-            f"! video/x-raw,format=BGRA,width={p.width},height={p.height},framerate={fps}/1 "
+            f"! video/x-raw,format=BGRA,width={cw},height={ch},framerate={fps}/1 "
             f"! cairooverlay name=outro ! tee name=vt")
 
         if preview:
-            pw = min(PREVIEW_WIDTH, p.width)
-            ph = round(pw * p.height / p.width) // 2 * 2
+            pw = min(PREVIEW_WIDTH, cw)
+            ph = round(pw * ch / cw) // 2 * 2
             parts.append(
-                f"vt. ! queue max-size-buffers=2 leaky=downstream ! videorate drop-only=true ! videoscale ! videoconvert "
+                # max-rate is lowered while recording with rec0 in the background.
+                f"vt. ! queue max-size-buffers=2 leaky=downstream ! videorate name=prevrate drop-only=true "
+                f"max-rate={PREVIEW_FPS} ! videoscale ! videoconvert "
                 f"! video/x-raw,format=RGB,width={pw},height={ph},framerate={PREVIEW_FPS}/1 "
                 f"! appsink name=preview emit-signals=true max-buffers=1 drop=true sync=false")
 
@@ -187,7 +197,7 @@ class Recorder:
             f"vt. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 "
             # Frames before the scheduled start are dropped here (see schedule_begin()).
             f"! identity name=vrec "
-            f"! videoconvert ! video/x-raw,format=I420 ! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
+            f"! videoconvert ! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
         # async=false: during the warm-up no data reaches the file, and an async sink
         # would keep the whole pipeline from reaching PLAYING.
         parts.append(f"{mux} ! filesink async=false location={q(output)}")
@@ -251,15 +261,16 @@ class Recorder:
             if layer is None:
                 pad.set_property("alpha", 0.0)
                 continue
-            r = layer.rect
+            r = self._scaled(layer).rect
             for prop, value in (("xpos", r.x), ("ypos", r.y), ("width", r.width), ("height", r.height),
                                 ("alpha", layer.alpha), ("zorder", 10 + order[key])):
                 pad.set_property(prop, value)
-            b["edge"], b["radius"] = layer.edge, layer.radius
+            b["edge"], b["radius"] = layer.edge * self.scale, layer.radius * self.scale
             # Changing the margins while the branch negotiates fails (not-negotiated):
             # only once it has produced a frame.
             if layer.crop and b["size"] != (0, 0):
                 for name, value in zip(("left", "top", "right", "bottom"), layer.crop):
+                    value = round(value * self.scale)
                     if b["box"].get_property(name) != value:
                         b["box"].set_property(name, value)
         if frame.camera and self._mix.get_static_pad(CAMERA_PAD):
@@ -300,11 +311,20 @@ class Recorder:
         fps = self.project.fps
         crop = next((l.crop for k, l in (self.frame.windows if self.frame else ()) if k == key), None) \
             or self._crops.get(key) or (0, 0, 0, 0)
+        crop = [round(c * self.scale) for c in crop]
+        # The preview alone shrinks each window right after capture: everything after
+        # (delay, crop, frame) then works on a fraction of the pixels.
+        shrink = "! videoscale ! capsfilter name=shrink " if self.scale < 1 else ""
         desc = (
-            f"{self.sources[key]} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! video/x-raw,format=I420 "
+            # Kept in the capture's own BGRx through the delay: I420 there meant two full
+            # colour conversions per frame (measured ~45% of a core per maximized window).
+            f"{self.sources[key]} ! queue max-size-buffers=3 leaky=downstream ! videoconvert ! video/x-raw,format=BGRx "
+            f"{shrink}"
             # Held back SCREEN_DELAY: privacy decisions apply before frames are composed.
-            f"! queue max-size-buffers=0 max-size-bytes=0 max-size-time=0 "
-            f"min-threshold-time={int(SCREEN_DELAY * Gst.SECOND)} "
+            # Bounded: if anything downstream stalls, old frames are dropped instead of
+            # the queue growing until the system runs out of memory.
+            f"! queue max-size-buffers=0 max-size-bytes=0 max-size-time={int((SCREEN_DELAY + 0.6) * Gst.SECOND)} "
+            f"leaky=downstream min-threshold-time={int(SCREEN_DELAY * Gst.SECOND)} "
             f"! valve name=valve drop={'true' if self.frozen.get(key, True) else 'false'} "
             f"! videoconvert ! video/x-raw,format=BGRA "
             # Crops client-side shadows, adds transparent room for the frame.
@@ -327,6 +347,11 @@ class Recorder:
         bin_.get_static_pad("src").link(pad)
         b = {"bin": bin_, "pad": pad, "box": bin_.get_by_name("box"), "valve": bin_.get_by_name("valve"),
              "freeze": bin_.get_by_name("freeze"), "size": (0, 0), "edge": 0.0, "radius": 0.0}
+        shrink = bin_.get_by_name("shrink")
+        if shrink is not None:
+            # On the scaler's input: the target size must be set before it negotiates.
+            scaler = shrink.get_static_pad("sink").get_peer().get_parent_element()
+            scaler.get_static_pad("sink").add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, self._on_capture_caps, shrink)
         mask = bin_.get_by_name("mask")
         mask.connect("caps-changed", self._on_window_caps, b)
         mask.connect("draw", self._on_window_draw, b)
@@ -345,6 +370,18 @@ class Recorder:
         b["bin"].set_state(Gst.State.NULL)
         self.pipeline.remove(b["bin"])
 
+    def _from_hw_jpeg(self, msg) -> bool:
+        el = self.pipeline.get_by_name("hwjpeg") if self.pipeline else None
+        if el is None:
+            return False
+        src = msg.src
+        while src is not None:
+            if src == el or src.get_name() == "camera-src":
+                return True
+            src = src.get_parent()
+        # Negotiation errors surface on the source: v4l2src feeding the GPU decoder.
+        return msg.src.get_name().startswith("v4l2src")
+
     def _window_of(self, obj) -> int | None:
         """Key of the window branch an element belongs to, if any."""
         while obj is not None:
@@ -354,9 +391,27 @@ class Recorder:
             obj = obj.get_parent()
         return None
 
+    def _scaled(self, layer):
+        """A layer in the pipeline's canvas (smaller than the project's for the preview)."""
+        if self.scale == 1.0:
+            return layer
+        r, k = layer.rect, self.scale
+        return replace(layer, rect=Rect(round(r.x * k), round(r.y * k), max(1, round(r.width * k)),
+                                        max(1, round(r.height * k))))
+
+    @property
+    def canvas(self) -> tuple[int, int]:
+        p = self.project
+        return round(p.width * self.scale) // 2 * 2, round(p.height * self.scale) // 2 * 2
+
+    def set_preview_rate(self, fps: int):
+        el = self.pipeline.get_by_name("prevrate") if self.pipeline else None
+        if el is not None:
+            el.set_property("max-rate", fps)
+
     def _set_pad(self, name, layer):
         pad = self._mix.get_static_pad(name)
-        r = layer.rect
+        r = self._scaled(layer).rect
         for prop, value in (("xpos", r.x), ("ypos", r.y), ("width", r.width), ("height", r.height),
                             ("alpha", layer.alpha)):
             pad.set_property(prop, value)
@@ -370,6 +425,8 @@ class Recorder:
             raise RuntimeError("pipeline already running")
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
+        # The preview alone is composed at its own size: a fraction of the work of 1080p.
+        self.scale = 1.0 if output is not None else min(1.0, PREVIEW_WIDTH / self.project.width)
         desc = self.describe(output, frame, preview=self.on_preview is not None)
         try:
             self.pipeline = Gst.parse_launch(desc)
@@ -632,6 +689,12 @@ class Recorder:
             key = self._window_of(msg.src)
             self._remove_branch(key)
             self._emit(self.on_window_lost, key)
+        elif t == Gst.MessageType.ERROR and not self.begun and self._from_hw_jpeg(msg):
+            # The GPU decoder refused this webcam: decode in software, start over.
+            hw.disable("jpeg")
+            frame, output, warmup = self.frame, self.output if self.recording else None, self._pending_begin is None
+            self._teardown()
+            GLib.idle_add(lambda: self.start(frame, output, warmup=warmup) and False)
         elif t == Gst.MessageType.ERROR:
             err, _dbg = msg.parse_error()
             name = msg.src.get_name() if msg.src else "?"
@@ -692,6 +755,14 @@ class Recorder:
     def _on_mask_caps(self, _overlay, caps):
         s = caps.get_structure(0)
         self._mask_size = (s.get_value("width"), s.get_value("height"))
+
+    def _on_capture_caps(self, _pad, info, shrink):
+        ev = info.get_event()
+        if ev.type == Gst.EventType.CAPS:
+            st = ev.parse_caps().get_structure(0)
+            w, h = (max(2, round(st.get_value(d) * self.scale)) for d in ("width", "height"))
+            shrink.set_property("caps", Gst.Caps.from_string(f"video/x-raw,width={w},height={h}"))
+        return Gst.PadProbeReturn.OK
 
     @staticmethod
     def _on_window_caps(_overlay, caps, b):

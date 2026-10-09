@@ -25,7 +25,7 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst  # noqa: E402
 
-from . import x11  # noqa: E402
+from . import hw, x11  # noqa: E402
 from .i18n import _  # noqa: E402
 from .project import Project, Rect, _color  # noqa: E402
 from .x11 import X11Window  # noqa: E402,F401  (re-exported)
@@ -172,7 +172,12 @@ def pick_camera_caps(caps: str, fps: int, want: tuple[int, int]) -> str | None:
     kind, w, h, rate, fmt = min(modes, key=score)
     rate = min(int(rate), fps) if rate >= fps - 0.5 else int(rate)
     if kind == "image/jpeg":
-        return f"image/jpeg,width={w},height={h},framerate={rate}/1 ! jpegdec"
+        # MJPEG decoded on the GPU when possible (a large share of the CPU otherwise).
+        # The size is pinned: vapostproc can scale, and caps negotiated across the tee
+        # downstream would let the small bubble branch shrink the whole webcam.
+        decode = (f"vajpegdec name=hwjpeg ! vapostproc ! video/x-raw,width={w},height={h}"
+                  if hw.jpeg_decoder() else "jpegdec")
+        return f"image/jpeg,width={w},height={h},framerate={rate}/1 ! {decode}"
     return f"video/x-raw,format={fmt},width={w},height={h},framerate={rate}/1" if fmt else \
         f"video/x-raw,width={w},height={h},framerate={rate}/1"
 
@@ -517,14 +522,15 @@ def frame_rgb(spec: str) -> tuple[float, float, float] | None:
     return ((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255
 
 
-def background_description(project: Project) -> str:
+def background_description(project: Project, size: tuple[int, int] | None = None) -> str:
     bg = project.background
     fps = project.fps
-    caps = f"video/x-raw,width={project.width},height={project.height},framerate={fps}/1"
+    width, height = size or (project.width, project.height)
+    caps = f"video/x-raw,width={width},height={height},framerate={fps}/1"
     color = {"black": 0xFF000000, "white": 0xFFFFFFFF}.get(bg) or _color(bg)
     if color is not None:
         return f"videotestsrc is-live=true pattern=solid-color foreground-color={color} ! {caps}"
-    image = prepared_background(bg, project.width, project.height)
+    image = prepared_background(bg, width, height)
     return (f"filesrc location={q(image)} ! pngdec ! videoconvert ! imagefreeze name=bgfreeze is-live=true ! "
             f"{caps},pixel-aspect-ratio=1/1")
 

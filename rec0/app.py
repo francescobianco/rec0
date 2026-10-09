@@ -23,10 +23,11 @@ from .project import (EXTENSION, EXTENSIONS, ProjectError, Rect, load, set_audio
                       set_audio_processing, template)
 
 PROJECT_MIME = "application/x-rec0-project"
-from .recorder import Director, Recorder  # noqa: E402
+from .recorder import PREVIEW_FPS, Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
 
 WARMUP = 1.5   # s the recording pipeline runs before writing (webcam exposure settles)
+BACKGROUND_PREVIEW_FPS = 10   # preview rate while recording with rec0 in the background
 
 CSS = b"""
 /* The picture is clipped with a larger radius than the edge: a wider curve cuts
@@ -155,7 +156,7 @@ class Window(Adw.ApplicationWindow):
         self.connect("close-request", self._on_close)
         self._fitted = False
         # While recording, leaving rec0 shows the webcam bubble on screen.
-        self.connect("notify::is-active", lambda *_: self._update_bubble())
+        self.connect("notify::is-active", lambda *_: (self._update_bubble(), self._update_preview_rate()))
         Gtk.RecentManager.get_default().connect("changed", lambda *_: self._fill_recent())
 
     # ---- construction -----------------------------------------------------
@@ -600,6 +601,7 @@ class Window(Adw.ApplicationWindow):
             | Gtk.ApplicationInhibitFlags.LOGOUT, _("Recording a video"))
         # The bubble exists only while recording (and shows when rec0 is not focused).
         self._start_bubble()
+        self._update_preview_rate()
         self.status.set_label(_("Recording"))
         self.status.add_css_class("recording")
         self.timer.remove_css_class("dim-label")
@@ -732,6 +734,13 @@ class Window(Adw.ApplicationWindow):
             self.director.set_mode(mode)
 
     # ---- bubble -----------------------------------------------------------
+
+    def _update_preview_rate(self):
+        # While recording with rec0 in the background nobody watches the preview
+        # closely: 10 fps spare the CPU (the recording itself is unaffected).
+        if self.recorder:
+            fps = BACKGROUND_PREVIEW_FPS if self.recording and not self.is_active() else PREVIEW_FPS
+            self.recorder.set_preview_rate(fps)
 
     def _start_bubble(self):
         cam = self.project.camera
