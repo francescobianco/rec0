@@ -36,8 +36,8 @@ from .scenes import Frame, compose, interpolate  # noqa: E402
 
 Gst.init(None)
 
-PREVIEW_SIZE = (640, 360)
-PREVIEW_FPS = 15
+PREVIEW_WIDTH = 1280            # preview frames (RGB) go through Python: big enough to look sharp
+PREVIEW_FPS = 30
 SCREEN_PAD, CAMERA_PAD = "sink_1", "sink_2"
 # Screen frames are held back this long before reaching the compositor, so that
 # when focus moves to a private page the screen layer is frozen before any of
@@ -162,10 +162,11 @@ class Recorder:
             f"! video/x-raw,format=AYUV,width={p.width},height={p.height},framerate={fps}/1 ! tee name=vt")
 
         if preview:
-            pw, ph = PREVIEW_SIZE
+            pw = min(PREVIEW_WIDTH, p.width)
+            ph = round(pw * p.height / p.width) // 2 * 2
             parts.append(
                 f"vt. ! queue max-size-buffers=2 leaky=downstream ! videorate drop-only=true ! videoscale ! videoconvert "
-                f"! video/x-raw,format=RGBA,width={pw},height={ph},framerate={PREVIEW_FPS}/1 "
+                f"! video/x-raw,format=RGB,width={pw},height={ph},framerate={PREVIEW_FPS}/1 "
                 f"! appsink name=preview emit-signals=true max-buffers=1 drop=true sync=false")
 
         if output is None:

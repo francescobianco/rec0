@@ -369,7 +369,7 @@ class Window(Adw.ApplicationWindow):
             # Once laid out, size the window so the preview has the video's exact
             # aspect ratio: no black bands around it.
             self._fitted = True
-            GLib.timeout_add(150, self._fit_to_preview)
+            self.frame.add_tick_callback(self._fit_when_ready)
         for name in ("record", "edit", "scene", "show-recordings", "camera", "microphone"):
             self.lookup_action(name).set_enabled(True)
         self.lookup_action("camera").set_enabled(project.camera is not None)
@@ -407,6 +407,13 @@ class Window(Adw.ApplicationWindow):
         self.director.set_mode("auto" if auto else "camera")
         self._on_scene(self.director.scene, None)
         self._start_preview()
+
+    def _fit_when_ready(self, frame, _clock):
+        # Wait until the preview has a real size (the webcam can take a while).
+        if frame.get_mapped() and frame.get_height() > 1 and self.get_height() > 1:
+            self._fit_to_preview()
+            return False
+        return True
 
     def _fit_to_preview(self):
         if self.is_maximized() or self.is_fullscreen() or not self.frame.get_mapped():
@@ -616,7 +623,8 @@ class Window(Adw.ApplicationWindow):
             Gtk.FileLauncher(file=Gio.File.new_for_path(str(self.last_recording))).launch(self, None, None)
 
     def _on_preview(self, data: bytes, w: int, h: int):
-        tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(data), w * 4)
+        stride = (w * 3 + 3) // 4 * 4   # GStreamer aligns RGB rows to 4 bytes
+        tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8, GLib.Bytes.new(data), stride)
         self.picture.set_paintable(tex)
 
     def _on_scene(self, scene: str, title: str | None):
