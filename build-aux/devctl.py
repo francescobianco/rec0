@@ -4,7 +4,7 @@
     devctl.py state
     devctl.py log
     devctl.py screenshot [out.png]
-    devctl.py open PROJECT.yaml
+    devctl.py open PROJECT.r0
     devctl.py record start|stop|toggle
     devctl.py scene auto|camera|share
     devctl.py focus "TITLE" [WM_CLASS] [x y w h]

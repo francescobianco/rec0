@@ -36,10 +36,10 @@ $(BUILD)/locale/%/LC_MESSAGES/rec0.mo: po/%.po
 	@mkdir -p $(dir $@)
 	$(MSGFMT) -o $@ $<
 
-# Opens examples/dev.yaml (real webcam and microphone) unless ARGS says otherwise.
+# Opens examples/dev.r0 (real webcam and microphone) unless ARGS says otherwise.
 start: build dev-desktop
 	REC0_PROFILE=development REC0_DEV_API=1 GSETTINGS_SCHEMA_DIR=$(BUILD)/schemas \
-		$(PYTHON) -m rec0 $(or $(ARGS),examples/dev.yaml)
+		$(PYTHON) -m rec0 $(or $(ARGS),examples/dev.r0)
 
 # Lets the shell show rec0's icon (dock, Alt+Tab) for the development instance.
 DEV_DESKTOP := $(HOME)/.local/share/applications/$(APP_ID).Devel.desktop
@@ -79,6 +79,8 @@ install: build
 	install -Dm 644 data/icons/hicolor/symbolic/apps/$(APP_ID)-symbolic.svg \
 		$(DATADIR)/icons/hicolor/symbolic/apps/$(APP_ID)-symbolic.svg
 	install -Dm 644 data/$(APP_ID).gschema.xml $(DATADIR)/glib-2.0/schemas/$(APP_ID).gschema.xml
+	install -Dm 644 data/$(APP_ID).mime.xml $(DATADIR)/mime/packages/$(APP_ID).xml
+	-update-mime-database $(DATADIR)/mime
 	glib-compile-schemas $(DATADIR)/glib-2.0/schemas
 	@for l in $(LINGUAS); do \
 		install -Dm 644 $(BUILD)/locale/$$l/LC_MESSAGES/rec0.mo $(LOCALEDIR)/$$l/LC_MESSAGES/rec0.mo; \
@@ -95,7 +97,9 @@ uninstall:
 		$(DATADIR)/dbus-1/services/$(APP_ID).service \
 		$(DATADIR)/icons/hicolor/scalable/apps/$(APP_ID).svg \
 		$(DATADIR)/icons/hicolor/symbolic/apps/$(APP_ID)-symbolic.svg \
-		$(DATADIR)/glib-2.0/schemas/$(APP_ID).gschema.xml
+		$(DATADIR)/glib-2.0/schemas/$(APP_ID).gschema.xml \
+		$(DATADIR)/mime/packages/$(APP_ID).xml
+	-update-mime-database $(DATADIR)/mime
 	@for l in $(LINGUAS); do rm -f $(LOCALEDIR)/$$l/LC_MESSAGES/rec0.mo; done
 	-glib-compile-schemas $(DATADIR)/glib-2.0/schemas
 	-gtk4-update-icon-cache -q -t -f $(DATADIR)/icons/hicolor

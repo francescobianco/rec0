@@ -5,7 +5,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
-"POT-Creation-Date: 2026-10-09 14:22+0200\n"
+"POT-Creation-Date: 2026-10-09 14:38+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -15,295 +15,295 @@ msgstr ""
 "Generated-By: pygettext.py 1.5\n"
 
 
-#: rec0/app.py:43 rec0/app.py:537 rec0/app.py:605 rec0/app.py:893
+#: rec0/app.py:45 rec0/app.py:539 rec0/app.py:607 rec0/app.py:895
 msgid "Recording"
 msgstr ""
 
-#: rec0/app.py:44
+#: rec0/app.py:46
 msgid "Start or Stop Recording"
 msgstr ""
 
-#: rec0/app.py:45 rec0/app.py:245
+#: rec0/app.py:47 rec0/app.py:246
 msgid "Automatic Scene"
 msgstr ""
 
-#: rec0/app.py:46 rec0/app.py:246
+#: rec0/app.py:48 rec0/app.py:247
 msgid "Close-up Scene"
 msgstr ""
 
-#: rec0/app.py:47 rec0/app.py:247
+#: rec0/app.py:49 rec0/app.py:248
 msgid "Share Scene"
 msgstr ""
 
-#: rec0/app.py:49 rec0/app.py:912
+#: rec0/app.py:51 rec0/app.py:914
 msgid "Projects"
 msgstr ""
 
-#: rec0/app.py:50 rec0/app.py:719
+#: rec0/app.py:52 rec0/app.py:721
 msgid "New Project"
 msgstr ""
 
-#: rec0/app.py:51 rec0/app.py:708
+#: rec0/app.py:53 rec0/app.py:710
 msgid "Open Project"
 msgstr ""
 
-#: rec0/app.py:52
+#: rec0/app.py:54
 msgid "Edit Project File"
 msgstr ""
 
-#: rec0/app.py:54
+#: rec0/app.py:56
 msgid "General"
 msgstr ""
 
-#: rec0/app.py:55
+#: rec0/app.py:57
 msgid "Preferences"
 msgstr ""
 
-#: rec0/app.py:56
+#: rec0/app.py:58
 msgid "Keyboard Shortcuts"
 msgstr ""
 
-#: rec0/app.py:57
+#: rec0/app.py:59
 msgid "Close Window"
 msgstr ""
 
-#: rec0/app.py:58
+#: rec0/app.py:60
 msgid "Quit"
 msgstr ""
 
-#: rec0/app.py:80
+#: rec0/app.py:82
 msgid "rec0 Projects"
 msgstr ""
 
-#: rec0/app.py:128
+#: rec0/app.py:129
 msgid "_Open"
 msgstr ""
 
-#: rec0/app.py:129
+#: rec0/app.py:130
 msgid "Open a Project"
 msgstr ""
 
-#: rec0/app.py:131
+#: rec0/app.py:132
 msgid "Main Menu"
 msgstr ""
 
-#: rec0/app.py:160 rec0/app.py:180
+#: rec0/app.py:161 rec0/app.py:181
 msgid "_New Project…"
 msgstr ""
 
-#: rec0/app.py:161
+#: rec0/app.py:162
 msgid "_Edit Project File"
 msgstr ""
 
-#: rec0/app.py:162
+#: rec0/app.py:163
 msgid "Show _Recordings"
 msgstr ""
 
-#: rec0/app.py:163
+#: rec0/app.py:164
 msgid "Last _Audio Report"
 msgstr ""
 
-#: rec0/app.py:166
+#: rec0/app.py:167
 msgid "_Preferences"
 msgstr ""
 
-#: rec0/app.py:167
+#: rec0/app.py:168
 msgid "_Keyboard Shortcuts"
 msgstr ""
 
-#: rec0/app.py:168
+#: rec0/app.py:169
 msgid "_About rec0"
 msgstr ""
 
-#: rec0/app.py:173
+#: rec0/app.py:174
 msgid "Record a Video"
 msgstr ""
 
-#: rec0/app.py:174
+#: rec0/app.py:175
 msgid "A project file describes what to record: open one to start, or create a new one."
 msgstr ""
 
-#: rec0/app.py:178
+#: rec0/app.py:179
 msgid "_Open Project…"
 msgstr ""
 
-#: rec0/app.py:183
+#: rec0/app.py:184
 msgid "Recent Projects"
 msgstr ""
 
-#: rec0/app.py:233 rec0/app.py:572
+#: rec0/app.py:234 rec0/app.py:574
 msgid "Start Recording"
 msgstr ""
 
-#: rec0/app.py:237 rec0/app.py:563 rec0/app.py:605
+#: rec0/app.py:238 rec0/app.py:565 rec0/app.py:607
 msgid "Ready"
 msgstr ""
 
-#: rec0/app.py:255 rec0/app.py:278
+#: rec0/app.py:256 rec0/app.py:279
 msgid "Webcam"
 msgstr ""
 
-#: rec0/app.py:259 rec0/app.py:296
+#: rec0/app.py:260 rec0/app.py:297
 msgid "Microphone"
 msgstr ""
 
-#: rec0/app.py:263
+#: rec0/app.py:264
 msgid "Microphone Level"
 msgstr ""
 
-#: rec0/app.py:280
+#: rec0/app.py:281
 msgid "_Mirror"
 msgstr ""
 
-#: rec0/app.py:283 rec0/app.py:298
+#: rec0/app.py:284 rec0/app.py:299
 msgid "As Set in the Project"
 msgstr ""
 
-#: rec0/app.py:292
+#: rec0/app.py:293
 msgid "Default Input"
 msgstr ""
 
-#: rec0/app.py:295
+#: rec0/app.py:296
 msgid "No Audio"
 msgstr ""
 
-#: rec0/app.py:359
+#: rec0/app.py:360
 msgid "Stop recording before changing project"
 msgstr ""
 
-#: rec0/app.py:364
+#: rec0/app.py:365
 msgid "Invalid Project"
 msgstr ""
 
-#: rec0/app.py:404
+#: rec0/app.py:405
 msgid "Recording Error"
 msgstr ""
 
-#: rec0/app.py:411
+#: rec0/app.py:412
 msgid "Sources Not Available"
 msgstr ""
 
-#: rec0/app.py:421
+#: rec0/app.py:423
 msgid "Automatic scene switching is not available in this session"
 msgstr ""
 
-#: rec0/app.py:452
+#: rec0/app.py:454
 msgid "Project reloaded"
 msgstr ""
 
-#: rec0/app.py:475
+#: rec0/app.py:477
 msgid "Could Not Start the Preview"
 msgstr ""
 
-#: rec0/app.py:497
+#: rec0/app.py:499
 msgid "Cancel"
 msgstr ""
 
-#: rec0/app.py:528
+#: rec0/app.py:530
 msgid "Could Not Record"
 msgstr ""
 
-#: rec0/app.py:534
+#: rec0/app.py:536
 msgid "Recording a video"
 msgstr ""
 
-#: rec0/app.py:546
+#: rec0/app.py:548
 msgid "Stop Recording"
 msgstr ""
 
-#: rec0/app.py:552
+#: rec0/app.py:554
 msgid "Saving…"
 msgstr ""
 
-#: rec0/app.py:597
+#: rec0/app.py:599
 msgid "Optimizing audio…"
 msgstr ""
 
-#: rec0/app.py:601
+#: rec0/app.py:603
 msgid "Optimizing audio… {pct:.0%}"
 msgstr ""
 
-#: rec0/app.py:608
+#: rec0/app.py:610
 msgid "Audio optimization failed, the original recording was kept: {error}"
 msgstr ""
 
-#: rec0/app.py:619
+#: rec0/app.py:621
 msgid "Saved {name}"
 msgstr ""
 
-#: rec0/app.py:621
+#: rec0/app.py:623
 msgid "Saved {name}, audio at {lufs:.0f} LUFS"
 msgstr ""
 
-#: rec0/app.py:623
+#: rec0/app.py:625
 msgid "_Play"
 msgstr ""
 
-#: rec0/app.py:626
+#: rec0/app.py:628
 msgid "Recording Saved"
 msgstr ""
 
-#: rec0/app.py:629
+#: rec0/app.py:631
 msgid "Show in Folder"
 msgstr ""
 
-#: rec0/app.py:637 rec0/cli.py:277
+#: rec0/app.py:639 rec0/cli.py:279
 msgid "Result: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, loudness range {lra:.1f} LU"
 msgstr ""
 
-#: rec0/app.py:640
+#: rec0/app.py:642
 msgid "Audio Optimization"
 msgstr ""
 
-#: rec0/app.py:719
+#: rec0/app.py:721
 msgid "tutorial"
 msgstr ""
 
-#: rec0/app.py:742
-msgid "Only rec0 project files (.yaml) can be opened"
+#: rec0/app.py:744
+msgid "Only rec0 project files (.r0) can be opened"
 msgstr ""
 
-#: rec0/app.py:782
+#: rec0/app.py:784
 msgid "_Close"
 msgstr ""
 
-#: rec0/app.py:875
+#: rec0/app.py:877
 msgid "Project-based video recorder: describe the session in a YAML file, press record."
 msgstr ""
 
-#: rec0/app.py:876
+#: rec0/app.py:878
 msgid "translator-credits"
 msgstr ""
 
-#: rec0/app.py:895
+#: rec0/app.py:897
 msgid "Countdown"
 msgstr ""
 
-#: rec0/app.py:896
+#: rec0/app.py:898
 msgid "Seconds to wait before recording starts"
 msgstr ""
 
-#: rec0/app.py:900
+#: rec0/app.py:902
 msgid "Webcam Bubble"
 msgstr ""
 
-#: rec0/app.py:901
+#: rec0/app.py:903
 msgid "While recording, show your webcam on screen when rec0 is not focused"
 msgstr ""
 
-#: rec0/app.py:905
+#: rec0/app.py:907
 msgid "Optimize Audio"
 msgstr ""
 
-#: rec0/app.py:906
+#: rec0/app.py:908
 msgid "Reduce noise, even out levels and set the loudness for online video after recording; the original is kept"
 msgstr ""
 
-#: rec0/app.py:913
+#: rec0/app.py:915
 msgid "Open the last used project at startup"
 msgstr ""
 
-#: rec0/app.py:913
+#: rec0/app.py:915
 msgid "Reopen Last Project"
 msgstr ""
 
@@ -415,7 +415,7 @@ msgstr ""
 msgid "weak voice under noise: gentle spectral denoise (neural took {db:.1f} dB of voice)"
 msgstr ""
 
-#: rec0/audio.py:518 rec0/cli.py:290
+#: rec0/audio.py:518 rec0/cli.py:292
 msgid "ffmpeg is required for audio processing"
 msgstr ""
 
@@ -483,7 +483,7 @@ msgstr ""
 msgid "no graphical session found to capture the screen"
 msgstr ""
 
-#: rec0/capture.py:503
+#: rec0/capture.py:551
 msgid "cannot read the background {path}: {error}"
 msgstr ""
 
@@ -500,7 +500,7 @@ msgid "create a new project file"
 msgstr ""
 
 #: rec0/cli.py:32
-msgid "project name (creates NAME.yaml)"
+msgid "project name (creates NAME.r0)"
 msgstr ""
 
 #: rec0/cli.py:34
@@ -643,8 +643,8 @@ msgstr ""
 msgid "There are problems to fix."
 msgstr ""
 
-#: rec0/cli.py:157 rec0/cli.py:173 rec0/cli.py:207 rec0/cli.py:219
-#: rec0/cli.py:302
+#: rec0/cli.py:157 rec0/cli.py:175 rec0/cli.py:209 rec0/cli.py:221
+#: rec0/cli.py:304
 msgid "error: {message}"
 msgstr ""
 
@@ -652,180 +652,184 @@ msgstr ""
 msgid "scene: {scene}"
 msgstr ""
 
-#: rec0/cli.py:170
+#: rec0/cli.py:172
 msgid "note: automatic scene switching is not available in this session (use --scene)"
 msgstr ""
 
-#: rec0/cli.py:182 rec0/cli.py:279
+#: rec0/cli.py:184 rec0/cli.py:281
 msgid "saved: {path}"
 msgstr ""
 
-#: rec0/cli.py:201
+#: rec0/cli.py:203
 msgid "finishing…"
 msgstr ""
 
-#: rec0/cli.py:208
+#: rec0/cli.py:210
 msgid "recording did not start (is the webcam used by another program?)"
 msgstr ""
 
-#: rec0/cli.py:237
+#: rec0/cli.py:239
 msgid "recording to {path} — Ctrl+C to stop"
 msgstr ""
 
-#: rec0/cli.py:250
+#: rec0/cli.py:252
 msgid "note: install ffmpeg to optimize the audio"
 msgstr ""
 
-#: rec0/cli.py:252
+#: rec0/cli.py:254
 msgid "optimizing audio…"
 msgstr ""
 
-#: rec0/cli.py:256
+#: rec0/cli.py:258
 msgid "audio optimization failed, the original recording was kept: {error}"
 msgstr ""
 
-#: rec0/cli.py:265
+#: rec0/cli.py:267
 msgid "analyzing"
 msgstr ""
 
-#: rec0/cli.py:265
+#: rec0/cli.py:267
 msgid "measuring"
 msgstr ""
 
-#: rec0/cli.py:265
+#: rec0/cli.py:267
 msgid "rendering"
 msgstr ""
 
-#: rec0/cli.py:266
+#: rec0/cli.py:268
 msgid "done"
 msgstr ""
 
-#: rec0/cli.py:266
+#: rec0/cli.py:268
 msgid "verifying"
 msgstr ""
 
-#: rec0/cli.py:287
+#: rec0/cli.py:289
 msgid "file not found"
 msgstr ""
 
-#: rec0/cli.py:287 rec0/project.py:183
+#: rec0/cli.py:289 rec0/project.py:184
 msgid "cannot read {path}: {error}"
 msgstr ""
 
-#: rec0/cli.py:312
+#: rec0/cli.py:314
 msgid "Webcams:"
 msgstr ""
 
-#: rec0/cli.py:315
+#: rec0/cli.py:317
 msgid "Microphones:"
 msgstr ""
 
-#: rec0/cli.py:319
+#: rec0/cli.py:321
 msgid "Monitors:"
 msgstr ""
 
-#: rec0/cli.py:322
+#: rec0/cli.py:324
 msgid "(primary)"
 msgstr ""
 
-#: rec0/cli.py:323
+#: rec0/cli.py:325
 msgid "Windows (for 'windows: - match: ...'):"
 msgstr ""
 
-#: rec0/cli.py:327
+#: rec0/cli.py:329
 msgid "Monitors and windows: on Wayland they are chosen through the system portal."
 msgstr ""
 
-#: rec0/cli.py:348
+#: rec0/cli.py:350
 msgid "saved permissions forgotten"
 msgstr ""
 
-#: rec0/project.py:185
+#: rec0/project.py:186
 msgid "invalid YAML: {error}"
 msgstr ""
 
-#: rec0/project.py:192
+#: rec0/project.py:193
 msgid "the project file must be a YAML mapping"
 msgstr ""
 
-#: rec0/project.py:208
+#: rec0/project.py:209
 msgid "background: '{value}' is neither a color (#RRGGBB) nor an existing image"
 msgstr ""
 
-#: rec0/project.py:220
+#: rec0/project.py:222
+msgid "{where}: must be 'accent', a color (#RRGGBB) or false"
+msgstr ""
+
+#: rec0/project.py:224
 msgid "screen.margin: too large for the resolution"
 msgstr ""
 
-#: rec0/project.py:225 rec0/project.py:376 rec0/project.py:402
+#: rec0/project.py:229 rec0/project.py:380 rec0/project.py:406
 msgid "{where}: must be a list"
 msgstr ""
 
-#: rec0/project.py:233 rec0/project.py:390 rec0/project.py:413
+#: rec0/project.py:237 rec0/project.py:394 rec0/project.py:417
 msgid "{where}: must be a string or a mapping with '{key}'"
 msgstr ""
 
-#: rec0/project.py:235
+#: rec0/project.py:239
 msgid "nothing to record: configure 'camera' and/or at least one entry in 'windows'"
 msgstr ""
 
-#: rec0/project.py:258
+#: rec0/project.py:262
 msgid "camera: must be a mapping, a device name or false"
 msgstr ""
 
-#: rec0/project.py:268
+#: rec0/project.py:272
 msgid "camera.closeup: the close-up scene needs a placement"
 msgstr ""
 
-#: rec0/project.py:275 rec0/project.py:291 rec0/project.py:309
-#: rec0/project.py:333 rec0/project.py:363 rec0/project.py:420
+#: rec0/project.py:279 rec0/project.py:295 rec0/project.py:313
+#: rec0/project.py:337 rec0/project.py:367 rec0/project.py:424
 msgid "{where}: must be one of {values}"
 msgstr ""
 
-#: rec0/project.py:293
+#: rec0/project.py:297
 msgid "camera.bubble: must be a mapping or false"
 msgstr ""
 
-#: rec0/project.py:304
+#: rec0/project.py:308
 msgid "{where}: must be 'fullscreen', a position or a mapping"
 msgstr ""
 
-#: rec0/project.py:313
+#: rec0/project.py:317
 msgid "{where}: must be between 0 and 1"
 msgstr ""
 
-#: rec0/project.py:369
+#: rec0/project.py:373
 msgid "output.filename: invalid placeholder ({error}); use {placeholders}"
 msgstr ""
 
-#: rec0/project.py:397
+#: rec0/project.py:401
 msgid "{where}: must be a list of domains"
 msgstr ""
 
-#: rec0/project.py:429
+#: rec0/project.py:433
 msgid "{where}: must be a mapping"
 msgstr ""
 
-#: rec0/project.py:440
+#: rec0/project.py:444
 msgid "{where}: invalid resolution '{value}' (e.g. 1920x1080 or 1080p)"
 msgstr ""
 
-#: rec0/project.py:456
+#: rec0/project.py:460
 msgid "{where}: must be a positive integer or a percentage (e.g. 25%)"
 msgstr ""
 
-#: rec0/project.py:462
+#: rec0/project.py:466
 msgid "{where}: must be an integer"
 msgstr ""
 
-#: rec0/project.py:465
+#: rec0/project.py:469
 msgid "{where}: out of range ({value})"
 msgstr ""
 
-#: rec0/project.py:471
+#: rec0/project.py:475
 msgid "{where}: must be a number"
 msgstr ""
 
-#: rec0/project.py:496
+#: rec0/project.py:505
 msgid ""
 "project: {name}\n"
 "\n"
@@ -857,6 +861,7 @@ msgid ""
 "screen:\n"
 "  monitor: primary\n"
 "  margin: 0                  # virtual desktop border around the real screen (0: corners match)\n"
+"  frame: accent              # frame around shared windows: accent (theme colour), #RRGGBB or false\n"
 "\n"
 "windows:\n"
 "  - match: Firefox\n"
@@ -898,19 +903,19 @@ msgstr ""
 msgid "no AAC encoder available (install gstreamer1.0-libav)"
 msgstr ""
 
-#: rec0/recorder.py:279
+#: rec0/recorder.py:354
 msgid "invalid pipeline: {error}"
 msgstr ""
 
-#: rec0/recorder.py:310
+#: rec0/recorder.py:383
 msgid "cannot start the pipeline"
 msgstr ""
 
-#: rec0/recorder.py:340
+#: rec0/recorder.py:412
 msgid "timed out while finishing the file"
 msgstr ""
 
-#: rec0/recorder.py:544
+#: rec0/recorder.py:640
 msgid "paused, {domain} is private"
 msgstr ""
 

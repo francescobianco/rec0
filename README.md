@@ -114,7 +114,7 @@ make install      # installa per il tuo utente in ~/.local (senza root)
 make uninstall    # rimuove tutto
 ```
 
-rec0 compare nella panoramica Attività, apre i file `.yaml` dal file manager (Apri
+rec0 compare nella panoramica Attività, apre i file di progetto `.r0` dal file manager (Apri
 con…) e si integra con GNOME: istanza singola, notifiche, progetti recenti, blocco
 della sospensione durante la registrazione, cartella Video come destinazione.
 
@@ -123,7 +123,7 @@ install -C _build`) e un manifest **Flatpak** in `build-aux/flatpak/`.
 
 ## Uso
 
-Interfaccia grafica: `rec0` oppure `rec0 progetto.yaml`.
+Interfaccia grafica: `rec0` oppure `rec0 progetto.r0`.
 
 | Scorciatoia | Azione |
 |---|---|
@@ -139,11 +139,11 @@ vale al posto di quella del progetto.
 Da terminale:
 
 ```bash
-rec0 init tutorial              # crea tutorial.yaml commentato
+rec0 init tutorial              # crea tutorial.r0 commentato
 rec0 devices                    # webcam, microfoni, monitor e finestre aperte
-rec0 check tutorial.yaml        # valida il progetto e verifica i dispositivi
-rec0 record tutorial.yaml       # registra senza GUI (Ctrl+C per fermare)
-rec0 record tutorial.yaml -d 60 --scene camera --no-bubble
+rec0 check tutorial.r0        # valida il progetto e verifica i dispositivi
+rec0 record tutorial.r0       # registra senza GUI (Ctrl+C per fermare)
+rec0 record tutorial.r0 -d 60 --scene camera --no-bubble
 ```
 
 L'interfaccia è in inglese con traduzione italiana: segue la lingua del sistema
@@ -201,7 +201,7 @@ output:
   format: mp4                # mp4 (H.264 + AAC) o mkv
 ```
 
-Altri esempi in [`examples/`](examples/); `examples/test.yaml` usa solo sorgenti
+Altri esempi in [`examples/`](examples/); `examples/test.r0` usa solo sorgenti
 sintetiche e funziona anche senza webcam.
 
 ## X11 e Wayland
@@ -234,7 +234,7 @@ per i test automatici. `build-aux/devctl.py` (o `make api ARGS=…`) è il clien
 
 ```bash
 make api ARGS="state"                        # stato dell'app in JSON
-make api ARGS="open examples/test.yaml"      # apre un progetto
+make api ARGS="open examples/test.r0"      # apre un progetto
 make api ARGS="record start"                 # start | stop | toggle
 make api ARGS="scene share"                  # auto | camera | share
 make api ARGS="focus 'Docs - Google Chrome' google-chrome 100 100 1200 800"

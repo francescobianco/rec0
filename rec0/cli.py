@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import __version__
 from .i18n import _
-from .project import ProjectError, load, template
+from .project import EXTENSION, EXTENSIONS, ProjectError, load, template
 
 COMMANDS = {"init", "check", "record", "process", "devices", "pipeline", "forget", "-h", "--help", "--version"}
 
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("init", help=_("create a new project file"))
-    p.add_argument("name", help=_("project name (creates NAME.yaml)"))
+    p.add_argument("name", help=_("project name (creates NAME.r0)"))
 
     p = sub.add_parser("check", help=_("validate the project and check the devices"))
     p.add_argument("project")
@@ -78,7 +78,7 @@ def gui(argv: list[str]) -> int:
 
 
 def cmd_init(args) -> int:
-    path = Path(args.name if args.name.endswith((".yaml", ".yml")) else f"{args.name}.yaml")
+    path = Path(args.name if args.name.endswith(EXTENSIONS) else f"{args.name}{EXTENSION}")
     if path.exists():
         print(_("{path} already exists").format(path=path), file=sys.stderr)
         return 1

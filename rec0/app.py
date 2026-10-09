@@ -18,7 +18,9 @@ from .bubble import Bubble  # noqa: E402
 from .capture import CaptureError, Captures, x11_monitors  # noqa: E402
 from .focus import FocusTracker  # noqa: E402
 from .i18n import N_, SOURCE_ROOT, _  # noqa: E402
-from .project import ProjectError, Rect, load, template  # noqa: E402
+from .project import EXTENSION, EXTENSIONS, ProjectError, Rect, load, template  # noqa: E402
+
+PROJECT_MIME = "application/x-rec0-project"
 from .recorder import Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
 
@@ -78,10 +80,9 @@ def _shortcuts_ui() -> str:
 def _yaml_filter() -> Gio.ListStore:
     filters = Gio.ListStore.new(Gtk.FileFilter)
     f = Gtk.FileFilter(name=_("rec0 Projects"))
-    for mime in ("application/yaml", "application/x-yaml"):
-        f.add_mime_type(mime)
-    f.add_suffix("yaml")
-    f.add_suffix("yml")
+    f.add_mime_type(PROJECT_MIME)
+    for ext in EXTENSIONS:
+        f.add_suffix(ext[1:])
     filters.append(f)
     return filters
 
@@ -191,7 +192,7 @@ class Window(Adw.ApplicationWindow):
     def _fill_recent(self):
         self.recent_list.remove_all()
         items = [i for i in Gtk.RecentManager.get_default().get_items()
-                 if i.has_application("rec0") and i.get_uri().endswith((".yaml", ".yml")) and i.exists()]
+                 if i.has_application("rec0") and i.get_uri().endswith(EXTENSIONS) and i.exists()]
         items.sort(key=lambda i: i.get_modified().to_unix(), reverse=True)
         for item in items[:5]:
             path = Path(Gio.File.new_for_uri(item.get_uri()).get_path())
@@ -717,7 +718,7 @@ class Window(Adw.ApplicationWindow):
         self.load_project(file.get_path())
 
     def _on_new(self, *_args):
-        dialog = Gtk.FileDialog(title=_("New Project"), initial_name=_("tutorial") + ".yaml",
+        dialog = Gtk.FileDialog(title=_("New Project"), initial_name=_("tutorial") + EXTENSION,
                                 filters=_yaml_filter(), modal=True)
         dialog.save(self, None, self._saved)
 
@@ -726,8 +727,8 @@ class Window(Adw.ApplicationWindow):
             path = Path(dialog.save_finish(result).get_path())
         except GLib.Error:
             return
-        if path.suffix not in (".yaml", ".yml"):
-            path = path.with_suffix(".yaml")
+        if path.suffix not in EXTENSIONS:
+            path = path.with_suffix(EXTENSION)
         path.write_text(template(path.stem))
         self.load_project(path)
         self._on_edit()
@@ -737,10 +738,10 @@ class Window(Adw.ApplicationWindow):
             Gtk.FileLauncher(file=Gio.File.new_for_path(str(self.project_path))).launch(self, None, None)
 
     def _on_drop(self, _target, file: Gio.File, _x, _y):
-        if file.get_path() and file.get_path().endswith((".yaml", ".yml")):
+        if file.get_path() and file.get_path().endswith(EXTENSIONS):
             self.load_project(file.get_path())
             return True
-        self.toast(_("Only rec0 project files (.yaml) can be opened"))
+        self.toast(_("Only rec0 project files (.r0) can be opened"))
         return False
 
     def _open_folder(self):

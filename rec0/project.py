@@ -497,6 +497,11 @@ def template(name: str) -> str:
 
 
 # Translators: this is a YAML file; translate only the comments after '#'.
+# Project files: YAML, saved with the .r0 extension (.yaml is still accepted).
+EXTENSION = ".r0"
+EXTENSIONS = (".r0", ".yaml", ".yml")
+
+
 TEMPLATE = N_("""\
 project: {name}
 
