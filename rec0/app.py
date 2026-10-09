@@ -708,7 +708,8 @@ class Window(Adw.ApplicationWindow):
         if self.bubble or not (cam and cam.bubble and self.settings.get_boolean("show-bubble")):
             return
         r = bubble_rect(cam.bubble, self.captures.area or self._primary_monitor())
-        self.bubble = Bubble(r.width, r.x, r.y, on_move=self._on_bubble_moved)
+        self.bubble = Bubble(r.width, r.x, r.y, on_move=self._on_bubble_moved,
+                             on_activate=self._on_bubble_activated)
         self.recorder.on_bubble_frame = self.bubble.frame
         self.bubble.start()
         self._update_bubble()
@@ -731,6 +732,14 @@ class Window(Adw.ApplicationWindow):
         else:
             self.bubble.show()
             self._on_bubble_moved(*self.bubble.pos, self.bubble.size)
+
+    def _on_bubble_activated(self, time: int):
+        # Double click on the bubble (or focus given to it): the main window comes
+        # forward, and with it the close-up scene.
+        if time:
+            self.present_with_time(time)
+        else:
+            self.present()
 
     def _on_bubble_moved(self, x: int, y: int, size: int):
         if self.bubble and self.bubble.visible and self.director:

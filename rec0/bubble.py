@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Callable
 
 RING = 0.03   # ring width as a fraction of the diameter, shared with the video mask
+DOUBLE_CLICK_MS = 400
 
 
 def draw_ring(cr, d: float):
@@ -38,10 +39,12 @@ def draw_ring(cr, d: float):
 # Controller, used by the main process
 
 class Bubble:
-    def __init__(self, size: int, x: int, y: int, on_move: Callable[[int, int, int], None] | None = None):
+    def __init__(self, size: int, x: int, y: int, on_move: Callable[[int, int, int], None] | None = None,
+                 on_activate: Callable[[int], None] | None = None):
         self.size = size
         self.pos = (x, y)
         self.on_move = on_move
+        self.on_activate = on_activate   # (X server time) double click, or focus received
         self.visible = False
         self._proc: subprocess.Popen | None = None
         self._queue: queue.Queue = queue.Queue(maxsize=4)
@@ -117,8 +120,14 @@ class Bubble:
         from gi.repository import GLib
 
         for line in self._proc.stdout:
+            words = line.split()
+            if words[:1] == [b"activate"]:
+                t = int(words[1]) if len(words) > 1 and words[1].isdigit() else 0
+                if self.on_activate:
+                    GLib.idle_add(lambda t=t: self.on_activate(t) and False)
+                continue
             try:
-                x, y, size = map(int, line.split())
+                x, y, size = map(int, words)
             except ValueError:
                 continue
             self.pos = (x, y)
@@ -149,7 +158,9 @@ def main(argv: list[str]) -> int:
     win.set_skip_pager_hint(True)
     win.set_accept_focus(False)      # never steal focus: it would change the scene
     win.set_focus_on_map(False)
-    win.set_type_hint(Gdk.WindowTypeHint.UTILITY)
+    # A dock-type panel: always above normal windows, and the shell neither counts it
+    # as one of rec0's windows (the dock activates the main window) nor focuses it.
+    win.set_type_hint(Gdk.WindowTypeHint.DOCK)
     win.set_resizable(False)
     win.set_app_paintable(True)
     visual = win.get_screen().get_rgba_visual()
@@ -157,7 +168,8 @@ def main(argv: list[str]) -> int:
         win.set_visual(visual)
     win.set_size_request(size, size)
     win.move(x, y)
-    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
+                   | Gdk.EventMask.BUTTON1_MOTION_MASK)
 
     def on_draw(_w, cr):
         cr.set_operator(cairo.OPERATOR_SOURCE)
@@ -181,9 +193,39 @@ def main(argv: list[str]) -> int:
         draw_ring(cr, size)
         return True
 
+    click = {"press": None, "release": 0, "dragging": False}
+
+    def activate(time: int):
+        # The main window comes forward; the click time lets it through focus-stealing prevention.
+        print("activate", time, flush=True)
+
     def on_press(_w, ev):
-        if ev.button == 1:
-            win.begin_move_drag(ev.button, int(ev.x_root), int(ev.y_root), ev.time)
+        if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
+            click["press"] = (ev.x_root, ev.y_root, ev.time)
+            click["dragging"] = False
+        return True
+
+    def on_motion(_w, ev):
+        # Drag only once the pointer really moves: a still click can be a double click.
+        p = click["press"]
+        if p and not click["dragging"] and abs(ev.x_root - p[0]) + abs(ev.y_root - p[1]) > 4:
+            click["dragging"] = True
+            win.begin_move_drag(1, int(p[0]), int(p[1]), p[2])
+        return True
+
+    def on_release(_w, ev):
+        if ev.button == 1 and not click["dragging"]:
+            if ev.time - click["release"] < DOUBLE_CLICK_MS:
+                activate(ev.time)
+                click["release"] = 0
+            else:
+                click["release"] = ev.time
+        click["press"] = None
+        return True
+
+    def raise_above():
+        if win.get_visible() and win.get_window():
+            win.get_window().raise_()
         return True
 
     last = {"pos": None}
@@ -197,6 +239,11 @@ def main(argv: list[str]) -> int:
 
     win.connect("draw", on_draw)
     win.connect("button-press-event", on_press)
+    win.connect("motion-notify-event", on_motion)
+    win.connect("button-release-event", on_release)
+    # Should it get focus anyway (e.g. from the dock), hand it to the main window.
+    win.connect("focus-in-event", lambda *_: activate(Gtk.get_current_event_time()) or False)
+    GLib.timeout_add(1000, raise_above)   # stay above windows that raise themselves
     win.connect("configure-event", on_configure)
     win.connect("realize", lambda w: w.get_window().input_shape_combine_region(_circle_region(size), 0, 0))
 
@@ -210,6 +257,7 @@ def main(argv: list[str]) -> int:
         if cmd == b"S":
             win.show_all()
             win.move(*(last["pos"] or (x, y)))
+            raise_above()
         elif cmd == b"H":
             win.hide()
         elif cmd == b"Q":
