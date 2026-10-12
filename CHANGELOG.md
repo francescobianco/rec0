@@ -39,6 +39,27 @@ All notable changes to rec0 are documented here. The format follows
 
 ### Audio
 
+- The room: a `dereverb` circuit lowers the reverberation tails after the
+  words when the room's decay time, read off the recording itself (the
+  fastest sustained decays after the words), is above 0.18 s. Late
+  reverberation is predicted from the sound 50 ms earlier through that decay
+  and subtracted per frequency bin (over-subtracted by half, never below
+  -25 dB); early reflections are kept. On a real recording the decay goes from
+  0.24 s to 0.15 s and the sound 64-128 ms after the words is 4-5 dB lower,
+  with 0.8 dB of voice; on a synthetic room the tails fall by 15 dB.
+- Warmth: a `warmth` circuit gives the voice back the balance the dynamics
+  stages tilt. Leveling and compression raise the quiet parts of speech, and
+  those are the consonants: on a real voice the output stood 2.5 dB above
+  the microphone from 5 kHz up in the long-term spectrum (up to 4 dB on the
+  loud frames), and 3 dB under it at 100 Hz, which sounded harsh. The balance is measured on the chain itself while rendering and given
+  back with shelves, plus 1 dB more at the top (a touch warmer than the
+  microphone). The same recording now stays within 1 dB of the microphone
+  from 2 kHz up, on the warm side.
+- The leveler is a slow gain rider only: its RMS normalisation and compress
+  factor made it a second compressor.
+- The YouTube loudness target is -16 LUFS: YouTube turns down what is above
+  -14 LUFS and never turns anything up, so a voice right at that ceiling played
+  louder than the talking videos around it.
 - Pauses are lowered with sample-continuous fades. The previous envelope was a
   volume step every 21 ms frame, an audible click at every transition: on a
   real recording the jump between two samples went from 0.008 before that

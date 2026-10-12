@@ -5,7 +5,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
-"POT-Creation-Date: 2026-10-09 22:02+0200\n"
+"POT-Creation-Date: 2026-10-12 10:27+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -15,7 +15,7 @@ msgstr ""
 "Generated-By: pygettext.py 1.5\n"
 
 
-#: rec0/app.py:51 rec0/app.py:610 rec0/app.py:680 rec0/app.py:994
+#: rec0/app.py:51 rec0/app.py:611 rec0/app.py:681 rec0/app.py:1008
 msgid "Recording"
 msgstr ""
 
@@ -35,15 +35,15 @@ msgstr ""
 msgid "Share Scene"
 msgstr ""
 
-#: rec0/app.py:57 rec0/app.py:1007
+#: rec0/app.py:57 rec0/app.py:1021
 msgid "Projects"
 msgstr ""
 
-#: rec0/app.py:58 rec0/app.py:820
+#: rec0/app.py:58 rec0/app.py:832
 msgid "New Project"
 msgstr ""
 
-#: rec0/app.py:59 rec0/app.py:809
+#: rec0/app.py:59 rec0/app.py:821
 msgid "Open Project"
 msgstr ""
 
@@ -131,11 +131,11 @@ msgstr ""
 msgid "Recent Projects"
 msgstr ""
 
-#: rec0/app.py:242 rec0/app.py:645
+#: rec0/app.py:242 rec0/app.py:646
 msgid "Start Recording"
 msgstr ""
 
-#: rec0/app.py:246 rec0/app.py:636 rec0/app.py:680
+#: rec0/app.py:246 rec0/app.py:637 rec0/app.py:681
 msgid "Ready"
 msgstr ""
 
@@ -207,259 +207,279 @@ msgstr ""
 msgid "Sources Not Available"
 msgstr ""
 
-#: rec0/app.py:458
+#: rec0/app.py:459
 msgid "Log out and back in to record windows one by one: the rec0 extension was updated"
 msgstr ""
 
-#: rec0/app.py:464
+#: rec0/app.py:465
 msgid "Enable the rec0 GNOME Shell extension to switch scenes automatically"
 msgstr ""
 
-#: rec0/app.py:466
+#: rec0/app.py:467
 msgid "Automatic scene switching is not available in this session"
 msgstr ""
 
-#: rec0/app.py:497
+#: rec0/app.py:498
 msgid "Project reloaded"
 msgstr ""
 
-#: rec0/app.py:520
+#: rec0/app.py:521
 msgid "Could Not Start the Preview"
 msgstr ""
 
-#: rec0/app.py:552
+#: rec0/app.py:553
 msgid "Could Not Record"
 msgstr ""
 
-#: rec0/app.py:559
+#: rec0/app.py:560
 msgid "Cancel"
 msgstr ""
 
-#: rec0/app.py:560
+#: rec0/app.py:561
 msgid "Starting…"
 msgstr ""
 
-#: rec0/app.py:606
+#: rec0/app.py:607
 msgid "Recording a video"
 msgstr ""
 
-#: rec0/app.py:619
+#: rec0/app.py:620
 msgid "Stop Recording"
 msgstr ""
 
-#: rec0/app.py:625
+#: rec0/app.py:626
 msgid "Saving…"
 msgstr ""
 
-#: rec0/app.py:671
+#: rec0/app.py:672
 msgid "Mixing audio…"
 msgstr ""
 
-#: rec0/app.py:671
+#: rec0/app.py:672
 msgid "Optimizing audio…"
 msgstr ""
 
-#: rec0/app.py:675
+#: rec0/app.py:676
 msgid "Mixing audio… {pct:.0%}"
 msgstr ""
 
-#: rec0/app.py:675
+#: rec0/app.py:676
 msgid "Optimizing audio… {pct:.0%}"
 msgstr ""
 
-#: rec0/app.py:683
+#: rec0/app.py:684
 msgid "Audio optimization failed, the original recording was kept: {error}"
 msgstr ""
 
-#: rec0/app.py:694
+#: rec0/app.py:695
 msgid "Saved {name}"
 msgstr ""
 
-#: rec0/app.py:696
+#: rec0/app.py:697
 msgid "Saved {name}, audio at {lufs:.0f} LUFS"
 msgstr ""
 
-#: rec0/app.py:698
+#: rec0/app.py:699
 msgid "_Play"
 msgstr ""
 
-#: rec0/app.py:701
+#: rec0/app.py:702
 msgid "Recording Saved"
 msgstr ""
 
-#: rec0/app.py:704
+#: rec0/app.py:705
 msgid "Show in Folder"
 msgstr ""
 
-#: rec0/app.py:712 rec0/cli.py:294
+#: rec0/app.py:713 rec0/cli.py:294
 msgid "Result: {lufs:.1f} LUFS, true peak {tp:.1f} dBTP, loudness range {lra:.1f} LU"
 msgstr ""
 
-#: rec0/app.py:715
+#: rec0/app.py:716
 msgid "Audio Optimization"
 msgstr ""
 
-#: rec0/app.py:820
+#: rec0/app.py:832
 msgid "tutorial"
 msgstr ""
 
-#: rec0/app.py:843
+#: rec0/app.py:855
 msgid "Only rec0 project files (.r0) can be opened"
 msgstr ""
 
-#: rec0/app.py:883
+#: rec0/app.py:895
 msgid "_Close"
 msgstr ""
 
-#: rec0/app.py:976
+#: rec0/app.py:988
 msgid "Project-based video recorder: describe the session in a YAML file, press record."
 msgstr ""
 
-#: rec0/app.py:977
+#: rec0/app.py:989
 msgid "translator-credits"
 msgstr ""
 
-#: rec0/app.py:996
+#: rec0/app.py:1010
 msgid "Countdown"
 msgstr ""
 
-#: rec0/app.py:997
+#: rec0/app.py:1011
 msgid "Seconds to wait before recording starts"
 msgstr ""
 
-#: rec0/app.py:1001
+#: rec0/app.py:1015
 msgid "Webcam Bubble"
 msgstr ""
 
-#: rec0/app.py:1002
+#: rec0/app.py:1016
 msgid "While recording, show your webcam on screen when rec0 is not focused"
 msgstr ""
 
-#: rec0/app.py:1008
+#: rec0/app.py:1022
 msgid "Open the last used project at startup"
 msgstr ""
 
-#: rec0/app.py:1008
+#: rec0/app.py:1022
 msgid "Reopen Last Project"
 msgstr ""
 
-#: rec0/audio.py:459
-msgid "{ratio:.3%} of samples clipped"
-msgstr ""
-
-#: rec0/audio.py:462
-msgid "no clipping"
-msgstr ""
-
-#: rec0/audio.py:466
-msgid "{hz} Hz cut, low end {db:+.0f} dB"
-msgstr ""
-
-#: rec0/audio.py:472
-msgid "{hz} Hz hum, {db:.0f} dB above its surroundings"
-msgstr ""
-
-#: rec0/audio.py:475
-msgid "no mains hum"
+#: rec0/audio.py:485
+msgid "room reverberation: sound dies in {s:.2f} s"
 msgstr ""
 
 #: rec0/audio.py:488
+msgid "dry room ({s:.2f} s)"
+msgstr ""
+
+#: rec0/audio.py:491
+msgid "{ratio:.3%} of samples clipped"
+msgstr ""
+
+#: rec0/audio.py:494
+msgid "no clipping"
+msgstr ""
+
+#: rec0/audio.py:498
+msgid "{hz} Hz cut, low end {db:+.0f} dB"
+msgstr ""
+
+#: rec0/audio.py:504
+msgid "{hz} Hz hum, {db:.0f} dB above its surroundings"
+msgstr ""
+
+#: rec0/audio.py:507
+msgid "no mains hum"
+msgstr ""
+
+#: rec0/audio.py:520
 msgid "quiet voice ({db:.0f} dBFS): +{g:.0f} dB"
 msgstr ""
 
-#: rec0/audio.py:492
+#: rec0/audio.py:524
 msgid "voice level fine"
 msgstr ""
 
-#: rec0/audio.py:505
+#: rec0/audio.py:537
 msgid "noise would sit at {db:.0f} dBFS: neural denoise {mix:.0%}"
 msgstr ""
 
-#: rec0/audio.py:510
+#: rec0/audio.py:542
 msgid "noise would sit at {db:.0f} dBFS: spectral denoise"
 msgstr ""
 
-#: rec0/audio.py:513
+#: rec0/audio.py:545
 msgid "quiet background ({db:.0f} dBFS after leveling)"
 msgstr ""
 
-#: rec0/audio.py:521
+#: rec0/audio.py:553
 msgid "breaths and noise between words lowered by {db} dB"
 msgstr ""
 
-#: rec0/audio.py:525
+#: rec0/audio.py:557
 msgid "pauses already quiet"
 msgstr ""
 
-#: rec0/audio.py:528
+#: rec0/audio.py:560
 msgid "speech level varies by {db:.1f} dB"
 msgstr ""
 
-#: rec0/audio.py:533
+#: rec0/audio.py:567
 msgid "steady speech level"
 msgstr ""
 
-#: rec0/audio.py:538
+#: rec0/audio.py:572
 msgid "boxy low-mids ({db:+.0f} dB)"
 msgstr ""
 
-#: rec0/audio.py:541
+#: rec0/audio.py:575
 msgid "balanced low-mids"
 msgstr ""
 
-#: rec0/audio.py:546
+#: rec0/audio.py:580
 msgid "muffled voice ({db:+.0f} dB highs)"
 msgstr ""
 
-#: rec0/audio.py:549
+#: rec0/audio.py:583
 msgid "clear voice"
 msgstr ""
 
-#: rec0/audio.py:553
+#: rec0/audio.py:587
 msgid "strong sibilance ({db:+.0f} dB)"
 msgstr ""
 
-#: rec0/audio.py:556
+#: rec0/audio.py:590
 msgid "no harsh sibilance"
 msgstr ""
 
-#: rec0/audio.py:562
+#: rec0/audio.py:596
 msgid "loudness range {lra:.0f} LU: {ratio}:1"
 msgstr ""
 
-#: rec0/audio.py:565
+#: rec0/audio.py:599
 msgid "no speech detected"
 msgstr ""
 
-#: rec0/audio.py:567
+#: rec0/audio.py:607
+msgid "gives back the balance the dynamics stages tilt (measured on the chain)"
+msgstr ""
+
+#: rec0/audio.py:609
+msgid "no dynamics stage to compensate"
+msgstr ""
+
+#: rec0/audio.py:611
 msgid "{lufs:.0f} LUFS, {tp:.0f} dBTP"
 msgstr ""
 
-#: rec0/audio.py:568
+#: rec0/audio.py:612
 msgid "true-peak safety"
 msgstr ""
 
-#: rec0/audio.py:655
+#: rec0/audio.py:689
+msgid "dynamics tilted lows {lo:+.1f} dB, highs {hi:+.1f} dB: shelves {glo:+.1f} / {ghi:+.1f} dB"
+msgstr ""
+
+#: rec0/audio.py:748
 msgid "voice kept ({db:.1f} dB)"
 msgstr ""
 
-#: rec0/audio.py:664
+#: rec0/audio.py:757
 msgid "neural denoise backed off to {mix:.0%}; voice loss {db:.1f} dB"
 msgstr ""
 
-#: rec0/audio.py:672
+#: rec0/audio.py:765
 msgid "spectral denoise; verified voice loss {db:.1f} dB"
 msgstr ""
 
-#: rec0/audio.py:675
+#: rec0/audio.py:768
 msgid "denoise bypassed: taking {db:.1f} dB of voice"
 msgstr ""
 
-#: rec0/audio.py:746 rec0/audio.py:761 rec0/cli.py:307
+#: rec0/audio.py:839 rec0/audio.py:854 rec0/cli.py:307
 msgid "ffmpeg is required for audio processing"
 msgstr ""
 
-#: rec0/audio.py:788
+#: rec0/audio.py:881
 msgid "the recording has no usable audio"
 msgstr ""
 

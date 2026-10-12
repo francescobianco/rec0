@@ -320,6 +320,21 @@ msgstr "sibilanti forti ({db:+.0f} dB)"
 msgid "no harsh sibilance"
 msgstr "nessuna sibilante aspra"
 
+msgid "room reverberation: sound dies in {s:.2f} s"
+msgstr "riverbero della stanza: il suono si spegne in {s:.2f} s"
+
+msgid "dry room ({s:.2f} s)"
+msgstr "stanza asciutta ({s:.2f} s)"
+
+msgid "gives back the balance the dynamics stages tilt (measured on the chain)"
+msgstr "restituisce l'equilibrio timbrico che gli stadi di dinamica inclinano (misurato sulla catena)"
+
+msgid "no dynamics stage to compensate"
+msgstr "nessuno stadio di dinamica da compensare"
+
+msgid "dynamics tilted lows {lo:+.1f} dB, highs {hi:+.1f} dB: shelves {glo:+.1f} / {ghi:+.1f} dB"
+msgstr "la dinamica ha spostato i bassi di {lo:+.1f} dB e gli acuti di {hi:+.1f} dB: shelf {glo:+.1f} / {ghi:+.1f} dB"
+
 msgid "loudness range {lra:.0f} LU: {ratio}:1"
 msgstr "gamma di loudness {lra:.0f} LU: {ratio}:1"
 

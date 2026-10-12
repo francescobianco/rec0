@@ -11,6 +11,7 @@ as loud as YouTube expects.
     process()  renders the video with the processed audio; the video stream is copied
 
 Stages, in signal order:
+    dereverb    lower the room's reverberation tails        if the room's decay is audible (blind RT60)
     declip      repair clipped peaks                        if samples hit full scale
     highpass    remove rumble / handling noise              always, cutoff by low-end energy
     dehum       notch mains hum and harmonics               if a 50/60 Hz line stands out
@@ -23,6 +24,9 @@ Stages, in signal order:
     presence    lift intelligibility around 3.5 kHz         if the voice sounds muffled
     deesser     tame harsh "s" sounds                       if sibilance is strong
     compressor  steady speech dynamics                      ratio from the dynamic range
+    warmth      give back the balance the dynamics stages   if denoise, pauses, leveler or compressor
+                tilted (they raise consonants over vowels), run: shelves measured on the chain itself,
+                plus a touch of warmth                      a constant bias towards warm
     loudness    measured constant gain to platform target    always
     limiter     true-peak safety                            always
 """
@@ -40,7 +44,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import echo
+from . import dereverb, echo
 from .i18n import _, pkgdata
 
 RATE = 48000
@@ -56,9 +60,12 @@ AAC_DELAY = 1024              # samples: the AAC encoder's priming; MP4 skips it
 FRAME = 1024                  # analysis frame, samples (21.3 ms at 48 kHz)
 WINDOW = FRAME / RATE         # ...in seconds
 
-# Platform loudness targets (integrated LUFS, true peak dBTP).
+# Platform loudness targets (integrated LUFS, true peak dBTP). YouTube turns down
+# what is louder than -14 LUFS and never turns anything up: a voice right at that
+# ceiling plays louder than the talking videos around it (most sit at -16…-18), so
+# rec0 aims 2 LU under it, where speech podcasts are mastered too.
 TARGETS = {
-    "youtube": (-14.0, -1.0),
+    "youtube": (-16.0, -1.0),
     "podcast": (-16.0, -1.0),
     "broadcast": (-23.0, -1.0),
 }
@@ -90,6 +97,15 @@ PREAMP_PEAK_MAX = 6.0         # peaks may go this far over 0 dBFS (float) before
 SPEECH_LOSS_MAX = 3.0         # dB of speech the denoiser may take before it is backed off
 RNNOISE_REDUCTION = 14.0      # typical noise reduction of the RNNoise model (dB)
 CLIP_RATIO = 2e-5             # fraction of samples at full scale that means clipping
+REVERB_MIN = 0.15             # s of blind decay time above which the room is treated (dry speech
+                              # reads 0.10-0.13; the dose follows the measurement, so this is a toe-in)
+# Stages whose effect on the voice's balance is none or intended: the reference the
+# warmth stage measures against (pauses is a gain envelope between words; keeping it on
+# both sides measures the speech, not the noise between the words).
+BALANCE_REFERENCE = ("declip", "highpass", "dehum", "preamp", "pauses")
+TILT_MIN = 0.5                # dB of balance change worth a shelf
+WARMTH = 1.0                  # dB: the high shelf goes this much past restoring the balance (taste)
+WARMTH_MAX = 6.0              # dB: largest shelf
 
 
 class AudioError(Exception):
@@ -129,11 +145,12 @@ class Analysis:
     levels: list = field(default_factory=list, repr=False)  # RMS dB of each analysis frame
     speech: list = field(default_factory=list, repr=False)  # VAD: True where someone is speaking
     pause_db: float = SILENCE_DB      # loud end of what is not speech (breaths, clicks, keyboard)
+    reverb_s: float = 0.0             # blind RT60 of the room (0: not measurable)
 
     def summary(self) -> str:
         return (f"speech {self.speech_db:.1f} dBFS, noise {self.noise_floor_db:.1f} dBFS, "
                 f"SNR {self.snr_db:.1f} dB, spread {self.speech_spread_db:.1f} dB, "
-                f"{self.loudness.get('input_i', '?')} LUFS")
+                f"{self.loudness.get('input_i', '?')} LUFS, room {self.reverb_s:.2f} s")
 
 
 @dataclass
@@ -365,10 +382,12 @@ def _astats(stderr: str) -> dict[str, dict[str, str]]:
 
 BANDS = {
     "rumble": "lowpass=f=80:p=2,lowpass=f=80:p=2",
+    "body": "highpass=f=100:p=2,lowpass=f=250:p=2",
     "mud": "highpass=f=150:p=2,lowpass=f=350:p=2",
     "voice": "highpass=f=300:p=2,lowpass=f=3000:p=2",
     "presence": "highpass=f=3000:p=2,lowpass=f=8000:p=2",
     "sibilance": "highpass=f=5000:p=2,highpass=f=5000:p=2,lowpass=f=9000:p=2",
+    "air": "highpass=f=8000:p=2,highpass=f=8000:p=2",
     "h50": "bandpass=f=50:width_type=q:w=20,bandpass=f=50:width_type=q:w=20",
     "h50n": "bandpass=f=38:width_type=q:w=8,bandpass=f=38:width_type=q:w=8",
     "h60": "bandpass=f=60:width_type=q:w=20,bandpass=f=60:width_type=q:w=20",
@@ -435,12 +454,17 @@ def analyze(path: str | Path, limit: float | None = None, echo_only: list[bool] 
         a.loudness = json.loads(m[0])
 
     voice = bands.get("voice", SILENCE_DB)
-    a.bands = {k: round(v - voice, 1) for k, v in bands.items() if k in ("rumble", "mud", "presence", "sibilance")}
+    a.bands = {k: round(v - voice, 1) for k, v in bands.items()
+               if k in ("rumble", "body", "mud", "presence", "sibilance", "air")}
     for hz in (50, 60):
         line, near = bands.get(f"h{hz}", SILENCE_DB), bands.get(f"h{hz}n", SILENCE_DB)
         prominence = line - near
         if line > a.noise_floor_db - 20 and prominence > max(HUM_PROMINENCE, a.hum_prominence_db):
             a.hum_hz, a.hum_prominence_db = hz, round(prominence, 1)
+
+    # 3. The room: how fast the sound dies after the words.
+    if dereverb.available():
+        a.reverb_s = round(dereverb.decay_time(path, limit) or 0.0, 2)
     return a
 
 
@@ -454,6 +478,14 @@ def _clamp(v, lo, hi):
 def plan(a: Analysis, target: str = "youtube") -> Plan:
     lufs, tp = TARGETS.get(target, TARGETS["youtube"])
     S = []
+
+    # The room's tails are lowered on the microphone itself, before any filter (process()
+    # runs it: a numpy stage, not an ffmpeg filter, so this stage carries no filter).
+    if a.reverb_s > REVERB_MIN:
+        S.append(Stage("dereverb", True, _("room reverberation: sound dies in {s:.2f} s").format(s=a.reverb_s),
+                       param=a.reverb_s))
+    else:
+        S.append(Stage("dereverb", False, _("dry room ({s:.2f} s)").format(s=a.reverb_s)))
 
     if a.clipped_ratio > CLIP_RATIO:
         S.append(Stage("declip", True, _("{ratio:.3%} of samples clipped").format(ratio=a.clipped_ratio),
@@ -526,8 +558,10 @@ def plan(a: Analysis, target: str = "youtube") -> Plan:
 
     if a.speech_spread_db > LEVELER_SPREAD:
         S.append(Stage("leveler", True, _("speech level varies by {db:.1f} dB").format(db=a.speech_spread_db),
+                       # A slow gain rider only (6 s window): the RMS mode and compress factor
+                       # it had made it a second compressor, raising consonants over vowels.
                        # t: frames below the speech level are not raised (pauses stay down).
-                       f"dynaudnorm=f=400:g=15:p=0.7:m=8:r=0.5:s=12"
+                       f"dynaudnorm=f=400:g=15:p=0.7:m=8"
                        f":t={10 ** ((speech - 18) / 20):.5f}"))
     else:
         S.append(Stage("leveler", False, _("steady speech level")))
@@ -564,6 +598,16 @@ def plan(a: Analysis, target: str = "youtube") -> Plan:
     else:
         S.append(Stage("compressor", False, _("no speech detected")))
 
+    # Warmth: the dynamics stages raise the quiet parts of speech, and those are the
+    # consonants: measured on a real voice, +2 dB above 4 kHz from the leveler and as
+    # much again from the compressor, -3 dB at 100 Hz. The balance is measured on the
+    # chain itself while rendering (process() fills the filter in) and given back with
+    # shelves, plus WARMTH dB more at the top: a touch warmer than the microphone.
+    if any(s.enabled for s in S if s.name in ("denoise", "pauses", "leveler", "compressor")):
+        S.append(Stage("warmth", True, _("gives back the balance the dynamics stages tilt (measured on the chain)")))
+    else:
+        S.append(Stage("warmth", False, _("no dynamics stage to compensate")))
+
     S.append(Stage("loudness", True, _("{lufs:.0f} LUFS, {tp:.0f} dBTP").format(lufs=lufs, tp=tp)))
     S.append(Stage("limiter", True, _("true-peak safety"),
                    f"alimiter=limit={10 ** ((tp - 0.5) / 20):.3f}:attack=2:release=50:level=disabled"))
@@ -596,6 +640,60 @@ def _loudnorm_pass(inputs: list[str], chain: str, lufs: float, tp: float) -> dic
     if not m:
         raise AudioError("loudness measurement failed")
     return json.loads(m[0])
+
+
+TILT_BANDS = ("body", "voice", "presence", "air")
+
+
+def _band_graph(label: str, prefix: str, last_open: bool) -> str:
+    """Measure TILT_BANDS of stream `label` with astats@{prefix}_{band}; the last branch
+    is left open when the graph needs an output."""
+    parts = [f"[{label}]asplit={len(TILT_BANDS)}" + "".join(f"[{prefix}{i}]" for i in range(len(TILT_BANDS)))]
+    for i, band in enumerate(TILT_BANDS):
+        sink = "" if last_open and i == len(TILT_BANDS) - 1 else ",anullsink"
+        parts.append(f"[{prefix}{i}]{BANDS[band]},astats@{prefix}_{band}=measure_perchannel=none"
+                     f":measure_overall=RMS_level{sink}")
+    return ";".join(parts)
+
+
+def _tilt_pass(inputs: list[str], static_chain: str, chain: str) -> dict[str, float]:
+    """How the stages after the balance-reference ones change the voice's balance: for
+    each of body, presence and air, dB relative to the voice band after `chain` minus the
+    same after `static_chain`, both run on `inputs` in one pass.
+
+    Whole-signal energies (the long-term spectrum), not per-frame ones: a leveler or a
+    compressor changes no frame's spectrum, it changes which frames are loud, and the
+    consonants it raises over the vowels are what makes the voice brighter. The pause
+    gate is on both sides, so what is between the words does not count."""
+    graph = (f"[0:a:0]asplit=2[s][d];[s]{static_chain}[sb];[d]{chain}[db];"
+             f"{_band_graph('sb', 'before', False)};{_band_graph('db', 'after', True)}")
+    stats = _astats(_ffmpeg([*inputs[:-1], "-i", inputs[-1], "-vn", "-filter_complex", graph, *_null()]))
+
+    def level(prefix, band):
+        return _db(stats.get(f"{prefix}_{band}", {}).get("RMS level dB", "-inf"))
+    tilt = {}
+    for band in TILT_BANDS:
+        if band == "voice":
+            continue
+        before = level("before", band) - level("before", "voice")
+        after = level("after", band) - level("after", "voice")
+        tilt[band] = round(after - before, 1)
+    return tilt
+
+
+def warmth_filters(tilt: dict[str, float]) -> tuple[str, str]:
+    """(filter, reason) that give back the balance `tilt` took, warmer by WARMTH dB at the top."""
+    half = lambda v: round(v * 2) / 2
+    low = half(_clamp(-tilt.get("body", 0.0), 0, WARMTH_MAX))
+    high = half(_clamp((tilt.get("presence", 0.0) + tilt.get("air", 0.0)) / 2 + WARMTH, 0, WARMTH_MAX))
+    filters = []
+    if low >= TILT_MIN:
+        filters.append(f"lowshelf=f=150:width_type=q:w=0.7:g={low:+.1f}")
+    if high >= TILT_MIN:
+        filters.append(f"highshelf=f=4000:width_type=q:w=0.7:g={-high:+.1f}")
+    reason = _("dynamics tilted lows {lo:+.1f} dB, highs {hi:+.1f} dB: shelves {glo:+.1f} / {ghi:+.1f} dB").format(
+        lo=tilt.get("body", 0.0), hi=(tilt.get("presence", 0.0) + tilt.get("air", 0.0)) / 2, glo=low, ghi=-high)
+    return ",".join(filters), reason
 
 
 def _trial_levels(src: str, head: list[str], chain: str) -> list[float]:
@@ -787,6 +885,12 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
     if not a.has_audio or a.active_ratio == 0:
         raise AudioError(_("the recording has no usable audio"))
     p = plan(a, target)
+    room = next((s for s in p.stages if s.name == "dereverb" and s.enabled), None)
+    if room:
+        step("dereverb", 0.1)
+        dry = str(Path(tmp.name) / "dry.wav")
+        dereverb.suppress(voice, dry, room.param, limit)
+        voice = dry
     pauses = next((s for s in p.stages if s.name == "pauses" and s.enabled), None)
     if pauses:
         cmds = Path(tmp.name) / "pauses.cmd"
@@ -794,6 +898,13 @@ def process(src: str | Path, dst: str | Path, target: str = "youtube",
         pauses.filter = pauses.filter.replace("{pause_commands}", _quote(str(cmds)))
     step("verify", 0.2)
     guard_denoise(a, voice, head, p)
+    warmth = next((s for s in p.stages if s.name == "warmth" and s.enabled), None)
+    if warmth:
+        step("measure", 0.25)
+        tilt = _tilt_pass(head + [voice], _voice_chain([s for s in p.stages if s.name in BALANCE_REFERENCE]),
+                          _voice_chain([s for s in p.stages if s.name != "warmth"]))
+        warmth.filter, warmth.reason = warmth_filters(tilt)
+        warmth.enabled = bool(warmth.filter)
     step("measure", 0.3)
     voice_channels = track_channels(voice)[0]
     measurement_chain = _voice_chain(p.stages)

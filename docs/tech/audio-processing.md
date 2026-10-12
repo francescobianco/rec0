@@ -57,13 +57,15 @@ What "good" means for rec0, in the author's words and as requirements:
 
 | # | Expectation | Status |
 |---|---|---|
-| E1 | A first-time creator with a cheap microphone in a noisy room gets clean, even voice at YouTube loudness (-14 LUFS, -1 dBTP) without touching anything | reached on voice-only recordings (synthetic and real); **not** when system sound plays through speakers |
+| E1 | A first-time creator with a cheap microphone in a noisy room gets clean, even voice at YouTube loudness (-16 LUFS, -1 dBTP: 2 LU under YouTube's -14 ceiling, since 2026-10-12, [§20](#20-volume-harshness-and-the-room)) without touching anything | reached on voice-only recordings (synthetic and real); **not** when system sound plays through speakers |
 | E2 | What plays on the computer while recording is in the video **as heard live**, "as if overlaid" | the system sound track is laid over untouched (verified to 0.03 dB); but see E3 and E5 |
 | E3 | No echo or "room" effect on the system sound when speakers are used instead of headphones | much improved (from the room copy 18 dB **above** the clean sound to 21 dB **below** it), residue still audible according to the author; the canceller removes only **5-7 dB of the microphone's total energy** on real recordings ([§19](#19-real-experiment-a-podcast-as-the-voice)) |
 | E4 | Stable processing: the voice must not change character from one moment to the next | **not reached**: measured on `dev-20261009-190333`: while the PC plays, the voice is lowered by more than 6 dB in 27% of 100 ms windows, with 88 gate transitions in 43 s ([§19](#19-real-experiment-a-podcast-as-the-voice)) |
 | E5 | The balance between voice and system sound resembles what was heard in the room | **not addressed**: the voice is normalised to -14 LUFS while system sound keeps its own level (open design question, [§13](#13-open-problems)) |
 | E6 | The voice stays in sync with the picture and with the system sound | reached: from +27 ms to -0.15 ms on a real recording |
 | E7 | Never lose a recording | reached: the original is renamed first and restored on any failure |
+| E8 | The voice keeps its own balance: not harsher than the microphone, a touch warmer | reached on `dev-20261012-095232`: within 0.4 dB of the microphone from 2.5 to 8 kHz (was +2.5…+4 dB), [§20](#20-volume-harshness-and-the-room) |
+| E9 | The room is not heard: reverberation tails after the words are lowered | partly: blind decay time 0.24 → 0.15 s on the same recording, 4-5 dB less sound 64-128 ms after the words; the author still heard room with the first dose (-15 dB floor, no over-subtraction); the measure cannot tell a slow delivery from a short room ([§20](#20-volume-harshness-and-the-room)) |
 
 ## 2. Overview
 
@@ -223,18 +225,20 @@ enabled only when the measurements call for it:
 
 | Circuit | Turns on when | Filter (ffmpeg) | How it is tuned |
 |---|---|---|---|
+| dereverb | blind decay time > 0.15 s | numpy (`rec0/dereverb.py`), on the microphone before any filter | late reverberation predicted from 50 ms earlier through the measured decay, subtracted per bin ×1.5, floor -25 dB |
 | declip | > 2e-5 of samples at full scale | `adeclip` | — |
 | highpass | always | 2× `highpass` | 70/80/100 Hz from the rumble band |
 | dehum | a 50/60 Hz line ≥ 12 dB above its neighbours | 4× `bandreject` | fundamental + 3 harmonics |
 | preamp | speech below -30 dBFS | `volume` | up to -24 dBFS, max +24 dB, peaks ≤ +6 dBFS (float) |
 | denoise | the noise floor, projected after normalisation, would be > 4 dB above -68 dBFS | `arnndn` (RNNoise, bundled speech model), mix 40-100% | mix = needed / 14 dB |
 | pauses | non-speech, after normalisation, would be > 4 dB above -60 dBFS | `asendcmd` + `volume@pauses` | depth 6-24 dB, ramps 30 ms open / 250 ms close, driven by the VAD |
-| leveler | speech level spread > 4 dB | `dynaudnorm f=400 g=15 m=8` | threshold `t` = speech level -18 dB (pauses are not raised) |
+| leveler | speech level spread > 4 dB | `dynaudnorm f=400 g=15 m=8` (no RMS mode, no compress factor since 2026-10-12) | threshold `t` = speech level -18 dB (pauses are not raised) |
 | mud | 150-350 Hz > 2 dB over the voice band | `equalizer 250 Hz` | -2 … -5 dB |
 | presence | 3-8 kHz < -26 dB under the voice band | `equalizer 3.5 kHz` | +2 … +5 dB |
 | deesser | 5-9 kHz > -10 dB | `deesser` | fixed |
 | compressor | there is speech | `acompressor` | 2:1 / 3:1 / 4:1 from the LRA (7 / 12 LU), threshold speech +6 dB |
-| loudness | always | `loudnorm` measurement + constant gain | -14 / -16 / -23 LUFS (youtube / podcast / broadcast) |
+| warmth | denoise, pauses, leveler or compressor on | `lowshelf 150 Hz`, `highshelf 4 kHz` | shelves = minus the balance change those stages cause, measured on the chain itself as whole-signal energies (body 100-250 Hz, presence 3-8 kHz, air 8-16 kHz, each relative to 300-3000 Hz) plus 1 dB more at the top; 0.5 dB steps, up to 6 dB |
+| loudness | always | `loudnorm` measurement + constant gain | -16 / -16 / -23 LUFS (youtube / podcast / broadcast) |
 | limiter | always | `alimiter`, 4× oversampled | true peak -1 dBTP |
 
 **Denoise feedback check (`guard_denoise`)**: the chain up to the denoiser
@@ -476,7 +480,7 @@ to raise (B9).
 | P4 | **Denoise quality with speakers** | checks now align samples and isolate denoising; fallback and reduced mixes are verified. Large RNNoise loss persists on `165346`; reduced RNNoise passes on `183203`. VAD and spectral preservation remain open |
 | P5 | **Large gains** on quiet microphones: preamp +12…+17 dB, leveler up to +18 dB, normalisation on top | any residue left in frames classified as speech is raised with the voice |
 | P6 | **No echo cancelling when processing is off** (`mixdown`) | the bleed stays at its natural level, less audible, but the copy still sits 11-18 ms behind the clean track |
-| P7 | **Voice/system balance** (E5) | the voice goes to -14 LUFS, system sound keeps its level: on `dev-20261009-165346` the video ends up ~10 dB under the voice, unlike in the room |
+| P7 | **Voice/system balance** (E5) | the voice goes to -16 LUFS (was -14), system sound keeps its level: on `dev-20261009-165346` the video ends up ~8 dB under the voice, unlike in the room |
 | P8 | **Reference corpus and listening approval missing** | protocol now defined in §17, not yet executed as a listening study |
 | P9 | **Double talk**: while the speaker talks over the video, the estimate's variance grows (the voice is noise for the estimator) | longer blocks help but follow the drift worse |
 | P10 | Flaky test (B10) | — |
@@ -877,3 +881,151 @@ python3 build-aux/audio-lab/evaluate.py ~/Videos/rec0/dev/NAME.original.mp4 /tmp
 # Canceller variants
 python3 build-aux/audio-lab/aec_variants.py; python3 build-aux/audio-lab/stereo_ref.py
 ```
+
+## 20. Volume, harshness and the room
+
+On 2026-10-12 the author listened to `dev-20261012-095232` (20 s, Blue USB
+microphone, PC silent) processed by the code of that morning and reported:
+final volume maybe too high, voice a bit harsh ("aspra"), maybe too much room
+reverberation. All three were measured and traced before anything was changed.
+
+### Harshness: the dynamics stages tilt the voice
+
+Third-octave spectrum of the loud (speech) frames, output relative to the
+microphone, both normalised to their 300-3000 Hz band
+(`build-aux/audio-lab/spectrum.py`):
+
+| Band | highpass | + denoise | + pauses | + leveler | + compressor | final (old code) | final (new code) |
+|---|---|---|---|---|---|---|---|
+| 100 Hz | -1.6 | -2.4 | -2.4 | -3.3 | -4.6 | -4.5 | -5.2 |
+| 3.2 kHz | 0.0 | 0.0 | 0.0 | +0.4 | +1.0 | +0.9 | -0.2 |
+| 5 kHz | +0.7 | +0.6 | 0.0 | +2.3 | +4.4 | +3.4 | -0.4 |
+| 8 kHz | +0.5 | 0.0 | -0.8 | +1.9 | +4.2 | +3.8 | -0.3 |
+| 10 kHz | +0.4 | 0.0 | -0.8 | +1.5 | +3.6 | +3.4 | -0.8 |
+
+The denoiser is innocent. The leveler adds about +2 dB above 4 kHz and the
+compressor as much again, and they take 3 dB at 100 Hz: both raise the quiet
+parts of speech, and those are the consonants. The long-term spectrum over
+all frames (`build-aux/audio-lab/ltas.py`, free of the loud-frame selection)
+agrees: the old output stands +2.5 dB (5-8 kHz) and +2.7 dB (8-16 kHz) above
+the microphone, the new chain within ±0.7 dB, slightly on the warm side. Parameter variants (leveler
+without its RMS mode and compress factor, compressor with 10/250 ms instead
+of 5/120 ms, ratio 1.5, no leveler at all) change the tilt by 0.3-0.6 dB only:
+any dynamics processing of speech does this. The leveler nevertheless lost
+`r=0.5:s=12`, which made it a second compressor for no gain in leveling
+(speech spread after: 5.1 vs 5.3 dB; LRA 5.7 vs 6.0 LU).
+
+**Circuit**: `warmth`. While rendering, one extra ffmpeg pass measures the
+body (100-250 Hz), presence (3-8 kHz) and air (8-16 kHz) bands relative to the
+voice band after the balance-reference stages (declip, highpass, dehum,
+preamp, pauses: the pause gate is kept on both sides so that speech, not the
+noise between words, is measured) and after the whole chain, as whole-signal
+energies: the long-term spectrum. A per-frame measurement on fixed frames was
+tried and discarded: a leveler or a compressor changes no frame's spectrum,
+it changes which frames are loud, so on fixed frames it reads zero (and the
+denoiser's thinning of the highs, -0.9 dB, is all that shows). The spectrum
+table above has the same bias the other way: it picks the loud frames of each
+signal separately, and the leveled signal's loud frames hold more consonants.
+The whole-signal measure is the one that corresponds to the ear's long-term
+balance, and the denoiser's and the dynamics' effects add up in it: with
+RNNoise bypassed (first dose of the dereverb) this recording read +2.2 dB at
+the top; with RNNoise at 93 % (stronger dereverb, the denoise check then
+passes it) +0.2 dB, the thinning and the brightening cancelling. Shelves give the
+difference back (`lowshelf 150 Hz` for the body, `highshelf 4 kHz` for the
+mean of presence and air), plus `WARMTH` = 1 dB more at the top: the author
+finds the microphone's own balance a little hard. On this recording: lows
++0.5 dB (no low shelf), highs +2.2 dB → high shelf -3 dB. The loudness is
+measured with the shelves in place (the pass order is tilt, then loudness).
+
+### Volume
+
+Output was -14.05 LUFS, on target. YouTube turns down what is louder than
+-14 LUFS and never turns anything up; most talking videos sit at -16…-18
+after that, so a voice right at the ceiling plays louder than the videos
+around it. The YouTube target is now -16 LUFS (also the speech podcast
+reference). E5 (room-like balance with system sound) is still open: the
+system track keeps its level, so the gap shrinks by 2 dB only.
+
+### The room
+
+A blind reverberation time is read off the microphone (`rec0/dereverb.py`):
+the 300-4000 Hz band energy per 5 ms frame, sustained falls of at least 15 dB
+over 64 ms, starting 25 dB above the quietest frames and ending 6 dB above
+them (the noise floor flattens what is below); the median of the fastest 20 %
+of their regression slopes gives RT60 = 60 / rate, since the room cannot
+decay faster than itself.
+
+| Signal | Blind decay time |
+|---|---|
+| ALSA voice samples, dry | 0.10 s |
+| the same in a synthetic room, RT60 0.2 / 0.3 / 0.5 s | 0.20 / 0.26 / 0.46 s |
+| the 0.3 s room with pink noise at 25 dB SNR | 0.31 s |
+| the dry samples with the test fixture's pink noise (25 dB SNR) | **0.30 s** |
+| `dev-20261012-095232` / `183203` / `165346` / `190333` | 0.24 / 0.21 / 0.19 / none |
+
+The last two rows are the limit of the method: with a noise floor 25 dB under
+the voice, the deep fast decays are hidden and the visible ones are the
+words' own ends, which for a slow delivery fall as slowly as a 0.3 s room.
+The measure is "how slowly this recording's sound dies", room and delivery
+together. Long rooms read short (0.5 → 0.46, 0.6 → 0.49): the first part of
+each decay is the word's end.
+
+**Circuit**: `dereverb`, on above 0.15 s, dosed by the measurement. Late
+reverberation suppression after Lebart, Boucher and Denbigh (2001): the
+smoothed power spectrum of 50 ms earlier, decayed by e^(-2·3ln10·0.05/RT60)
+(-12 dB for 0.24 s), is the late tail predicted at the present frame and is
+subtracted per bin (gain 1 - 1.5·late/now, floor -25 dB, at most -6 dB per
+frame).
+Early reflections within 50 ms are kept. The STFT is the echo canceller's
+(1024/256, sqrt-Hann both sides, no delay: the sync test holds). It runs on
+the microphone WAV before any ffmpeg filter, as the echo canceller does, and
+costs about 1 s per minute of audio (measure 0.3 s, suppress 0.5 s on 39 s).
+
+**Dose.** The first dose (floor -15 dB, no over-subtraction) gave 9 dB on
+the synthetic tails and 0.24 → 0.17 s on the real recording; the author
+listened and still heard room. Settings compared on both (synthetic 0.3 s
+room: tails = frames where the dry signal is 70 dB down and the wet one within
+50 dB of its peak; speech = frames within 25 dB of the dry peak; LSD = mean
+log-spectral distance to the dry speech on those frames, 7.23 dB untouched):
+
+| Setting | Synthetic tails | Synthetic speech | LSD to dry | Real decay time |
+|---|---|---|---|---|
+| floor -15 dB, ×1.0 (first dose) | -8.7 dB | -0.5 dB | 6.9 | 0.17 s |
+| floor -25 dB, ×1.0 | -9.3 | -0.5 | — | 0.16 |
+| floor -25 dB, ×1.5 (**chosen**) | -14.6 | -0.8 | 6.89 | 0.15 |
+| floor -25 dB, ×2.0 | -18.7 | -1.0 | 7.27 (worse than untouched) | 0.14 |
+| 30 ms start instead of 50 | -17.1 | -2.4 | — | 0.13 |
+| WPE (linear prediction, 2 frames delay, 8 taps, 2 iterations) | -2.8 | -2.5 | 6.09 | 0.22 |
+
+Over-subtraction by 2 and a 30 ms start colour the speech; WPE (the standard
+linear dereverberation) takes 2.5 dB of voice for 3 dB of tail on this short
+room and costs 5 s per 30 s of audio, so it was not adopted. With the chosen
+dose, the mean 300-4000 Hz level after 8 word ends of `dev-20261012-095232`
+(0 dB = the 200 ms of speech before each):
+
+| ms after the word end | microphone | first dose | chosen dose |
+|---|---|---|---|
+| 64 | -1.0 | -3.5 | -4.8 |
+| 96 | -6.0 | -9.0 | -10.4 |
+| 128 | -8.4 | -11.7 | -13.2 |
+| 160 | -10.1 | -11.5 | -12.2 |
+
+No sample delay (test). The speech spectrum stays within 0.4 dB of the
+microphone from 2.5 to 8 kHz. A listening set is in
+`~/Videos/rec0/dev/listen-095232/` (microphone, old processing, new chain with
+the room left, new chain with the chosen dose).
+
+### Open after this work
+
+- The suppressor cannot touch the first 50 ms (early reflections: the
+  "small room" colouring) without taking voice; if the author still hears
+  room with the chosen dose, that is where it lives, and only the microphone
+  position or the room itself changes it.
+- The decay estimate cannot separate the room from a slow delivery below
+  about 0.3 s. A stronger estimator (Löllmann 2010, or a maximum-likelihood
+  fit on the sub-band envelopes) is the next step if the dose proves wrong on
+  dry voices.
+- `WARMTH` (1 dB) is taste, not measurement; a per-project setting would let
+  the author dial it.
+- E5 remains: the voice/system balance is a policy decision ([§14](#14-proposed-next-steps), point 5).
+

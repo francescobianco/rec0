@@ -25,7 +25,34 @@ def enabled(p):
 
 
 def test_clean_recording_gets_only_the_essentials():
-    assert enabled(plan(analysis())) == {"highpass", "compressor", "loudness", "limiter"}
+    assert enabled(plan(analysis())) == {"highpass", "compressor", "warmth", "loudness", "limiter"}
+
+
+def test_warmth_only_compensates_dynamics_stages():
+    p = plan(analysis(active_ratio=0.0))
+    assert "compressor" not in enabled(p) and "warmth" not in enabled(p)
+    # The shelves are measured on the chain while rendering: the planned stage has no filter yet.
+    assert next(s.filter for s in plan(analysis()).stages if s.name == "warmth") == ""
+
+
+def test_warmth_shelves_give_back_the_tilt_plus_a_touch():
+    filt, reason = audio.warmth_filters({"body": -2.0, "presence": 2.0, "air": 4.0})
+    assert filt == "lowshelf=f=150:width_type=q:w=0.7:g=+2.0,highshelf=f=4000:width_type=q:w=0.7:g=-4.0"
+    assert "+2.0 / -4.0 dB" in reason
+    # No tilt: only the constant touch of warmth at the top, nothing at the bottom.
+    filt, _ = audio.warmth_filters({"body": 0.3, "presence": 0.0, "air": 0.0})
+    assert filt == f"highshelf=f=4000:width_type=q:w=0.7:g={-audio.WARMTH:+.1f}"
+    # Bounded, and rounded to half decibels.
+    filt, _ = audio.warmth_filters({"body": -9.0, "presence": 9.0, "air": 9.0})
+    assert f"g=+{audio.WARMTH_MAX:.1f}" in filt and f"g=-{audio.WARMTH_MAX:.1f}" in filt
+
+
+def test_room_reverberation_turns_the_dereverb_stage_on():
+    assert "dereverb" not in enabled(plan(analysis(reverb_s=0.14)))
+    p = plan(analysis(reverb_s=0.31))
+    stage = next(s for s in p.stages if s.name == "dereverb")
+    assert stage.enabled and stage.param == 0.31 and stage.filter == ""   # a numpy stage, not a filter
+    assert "0.31 s" in stage.reason
 
 
 def test_noisy_cheap_microphone_turns_on_the_cleanup_circuits():
@@ -51,6 +78,7 @@ def test_hum_and_clipping_are_repaired():
 
 
 def test_targets():
+    assert plan(analysis(), "youtube").target_lufs == -16   # 2 LU under YouTube's -14 ceiling
     assert plan(analysis(), "podcast").target_lufs == -16
     assert plan(analysis(), "broadcast").target_lufs == -23
 
@@ -79,8 +107,8 @@ def test_process_cleans_and_normalizes(noisy_voice, tmp_path):
     out = tmp_path / "out.m4a"
     report = audio.process(noisy_voice, out)
     on = {s.name for s in report.stages if s.enabled}
-    assert {"denoise", "preamp"} <= on
-    assert abs(report.result["integrated_lufs"] + 14) < 1
+    assert {"denoise", "preamp", "warmth"} <= on
+    assert abs(report.result["integrated_lufs"] + 16) < 1
     assert report.result["true_peak_dbtp"] <= -0.9
     before, after = report.analysis, audio.analyze(out)
     assert after.snr_db > before.snr_db + 15

@@ -111,16 +111,18 @@ loudness for YouTube.
 | Circuit | Turns on when | Tuned by |
 |---|---|---|
 | echo canceller | system sound is recorded too | removes from the microphone what the speakers played |
+| dereverb | the room's decay, read off the recording, is above 0.18 s | lowers the reverberation tails after the words, dosed on the measured decay |
 | declip | samples are clipped | — |
 | highpass | always | 70/80/100 Hz cut, from the measured rumble |
 | dehum | a 50/60 Hz line stands out | notch on the fundamental and 3 harmonics |
 | preamp | the voice is below -30 dBFS | brings it to -24 dBFS before denoising |
 | denoise | noise would be audible **after** normalisation | RNNoise neural network, mixed by need |
 | pauses / expander | noise is left between words | lowers pauses by up to 18 dB |
-| leveler | the voice level varies (distance from the microphone) | does not raise pauses |
+| leveler | the voice level varies (distance from the microphone) | slow gain rider; does not raise pauses |
 | mud / presence / de-esser | boomy low-mids / muffled voice / harsh sibilance | EQ and de-esser dosed on the measurement |
 | compressor | there is speech | 2:1, 3:1 or 4:1 from the dynamic range |
-| loudness + limiter | always | two-pass EBU R128: -14 LUFS, -1 dBTP (4× oversampled limiter) |
+| warmth | leveling, compression or denoising ran | gives back the balance they tilt (they raise consonants over vowels), measured on the chain itself, plus 1 dB of warmth at the top |
+| loudness + limiter | always | two-pass EBU R128: -16 LUFS, -1 dBTP (4× oversampled limiter) |
 
 The denoiser runs **under feedback**: before rendering, the processor checks
 how much voice survives, and if the neural network would take more than 3 dB
@@ -144,7 +146,7 @@ video is never re-encoded.
 ```yaml
 audio:
   processing: auto      # or off (the tracks are still mixed into one)
-  target: youtube       # youtube (-14 LUFS), podcast (-16), broadcast (-23)
+  target: youtube       # youtube (-16 LUFS: 2 LU under its -14 ceiling), podcast (-16), broadcast (-23)
   keep_original: true
 ```
 
