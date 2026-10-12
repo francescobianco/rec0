@@ -102,6 +102,39 @@ def window_layer(project: Project, area: Rect, content: Rect,
     return Layer(rect, 1.0, crop, pad, radius)
 
 
+def covered(windows) -> set[int]:
+    """Keys of the layers entirely behind a later (higher) one in `windows`
+    ((key, Layer) pairs, bottom to top): nobody can see them."""
+    out = set()
+    for i, (key, layer) in enumerate(windows):
+        if any(hides(above, layer) for _k, above in windows[i + 1:]):
+            out.add(key)
+    return out
+
+
+def hides(above: Layer, below: Layer) -> bool:
+    """Whether `above` hides every pixel of `below`. A framed layer has rounded
+    corners that let what is behind show through: a lower layer reaching into one
+    of them shows, unless it shares that very corner and is rounded there too
+    (two maximized windows, or the same window twice)."""
+    a, r = above.rect, below.rect
+    if not (a.x <= r.x and a.y <= r.y and a.x + a.width >= r.x + r.width and a.y + a.height >= r.y + r.height):
+        return False
+    if above.radius <= 0:
+        return True
+    d = WINDOW_RADIUS
+    ax2, ay2, rx2, ry2 = a.x + a.width, a.y + a.height, r.x + r.width, r.y + r.height
+    corners = ((a.x, a.y, r.x == a.x and r.y == a.y),
+               (ax2 - d, a.y, rx2 == ax2 and r.y == a.y),
+               (a.x, ay2 - d, r.x == a.x and ry2 == ay2),
+               (ax2 - d, ay2 - d, rx2 == ax2 and ry2 == ay2))
+    for cx, cy, same in corners:
+        reaches = r.x < cx + d and rx2 > cx and r.y < cy + d and ry2 > cy
+        if reaches and not (same and below.radius > 0):
+            return False
+    return True
+
+
 def screen_layer(project: Project, area: Rect) -> Layer:
     """Layer for the whole screen captured at once (Wayland). When it does not fill
     the canvas it is framed like a window, in the room screen_area() leaves for it."""

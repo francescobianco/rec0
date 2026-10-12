@@ -484,7 +484,9 @@ class Captures:
         if cam is None:
             return None
         if cam.device == "test":
-            return "videotestsrc is-live=true pattern=ball"
+            # Pinned like a real webcam's mode: when the branches after the tee renegotiate
+            # (the webcam branch is resized to its layer), the source must not follow.
+            return f"videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=480,framerate={self.project.fps}/1"
         caps = pick_camera_caps(self.camera.caps, self.project.fps, cam.capture_size or want)
         return f"v4l2src device={q(self.camera.id)} do-timestamp=true" + (f" ! {caps}" if caps else " ! decodebin")
 

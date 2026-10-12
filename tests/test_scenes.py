@@ -115,3 +115,22 @@ def test_overlay_follows_bubble():
     assert b == Rect(1920 - 200 - 40, 32 + 1048 - 200 - 40, 200, 200)
     f = compose(p, "share", WORK, [Shown(1, Rect(0, 32, 900, 500))], bubble=b)
     assert f.camera.rect == to_canvas(p, WORK, b)
+
+
+def test_covered_windows_are_the_ones_entirely_behind_a_higher_one():
+    from rec0.scenes import Layer, covered
+    big = Layer(Rect(0, 0, 1920, 1080), 1.0)                  # fullscreen: no corners
+    framed = Layer(Rect(100, 100, 800, 600), 1.0, radius=12.0)
+    inside = Layer(Rect(200, 200, 300, 300), 1.0, radius=12.0)
+    corner = Layer(Rect(100, 100, 300, 300), 1.0, radius=12.0)  # shares the framed one's corner, rounded too
+    edge = Layer(Rect(100, 100, 795, 300), 1.0, radius=12.0)    # reaches the top-right corner, not from it
+    square = Layer(Rect(100, 100, 300, 300), 1.0)               # shares the corner but is not rounded
+    assert covered([(1, big), (2, big)]) == {1}
+    assert covered([(1, framed), (2, framed)]) == {1}            # two maximized windows
+    assert covered([(1, inside), (2, framed)]) == {1}
+    assert covered([(1, corner), (2, framed)]) == {1}
+    assert covered([(1, edge), (2, framed)]) == set()            # shows through the rounded corner
+    assert covered([(1, square), (2, framed)]) == set()
+    assert covered([(1, framed), (2, inside)]) == set()          # the higher one is smaller
+    assert covered([(1, inside), (2, framed), (3, big)]) == {1, 2}
+    assert covered([]) == set()

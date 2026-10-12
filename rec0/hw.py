@@ -34,8 +34,10 @@ def _works(desc: str) -> bool:
 
 
 def h264_encoder() -> bool:
-    return _works("videotestsrc num-buffers=3 ! video/x-raw,width=320,height=240,format=NV12 "
-                  "! vah264lpenc ! h264parse ! fakesink")
+    """H.264 on the GPU, fed through vapostproc: the colour conversion of the composed
+    BGRA frames happens there too (in software, 1080p30 costs ~15% of a core)."""
+    return _works("videotestsrc num-buffers=3 ! video/x-raw,width=320,height=240,format=BGRA "
+                  "! vapostproc ! video/x-raw(memory:VAMemory),format=NV12 ! vah264lpenc ! h264parse ! fakesink")
 
 
 _disabled: set[str] = set()

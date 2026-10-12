@@ -6,6 +6,8 @@ video:
   fps: 30
 
 camera:
+  bubble:
+    size: 267
   device: default
   closeup: fullscreen
   overlay:

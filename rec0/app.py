@@ -27,7 +27,8 @@ from .recorder import PREVIEW_FPS, Director, Recorder  # noqa: E402
 from .scenes import bubble_rect, scene_label  # noqa: E402
 
 WARMUP = 1.5   # s the recording pipeline runs before writing (webcam exposure settles)
-BACKGROUND_PREVIEW_FPS = 10   # preview rate while recording with rec0 in the background
+RECORDING_PREVIEW_FPS = 15    # preview rate while recording: a monitor, not the recording
+BACKGROUND_PREVIEW_FPS = 5    # ...and with rec0 in the background, where nobody watches it
 
 CSS = b"""
 /* The picture is clipped with a larger radius than the edge: a wider curve cuts
@@ -745,7 +746,8 @@ class Window(Adw.ApplicationWindow):
         # While recording with rec0 in the background nobody watches the preview
         # closely: 10 fps spare the CPU (the recording itself is unaffected).
         if self.recorder:
-            fps = BACKGROUND_PREVIEW_FPS if self.recording and not self.is_active() else PREVIEW_FPS
+            fps = PREVIEW_FPS if not self.recording else \
+                RECORDING_PREVIEW_FPS if self.is_active() else BACKGROUND_PREVIEW_FPS
             self.recorder.set_preview_rate(fps)
 
     def _start_bubble(self):

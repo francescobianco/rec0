@@ -178,7 +178,14 @@ flowchart LR
   mux -. after stop .-> post[echo canceller · voice processor · mix] --> final[(final video)]
 ```
 
-- **Hardware acceleration**: H.264 encoding and the webcam's MJPEG decoding
+- **Resources follow visibility**: a presented window entirely behind
+  another one is not captured, converted or composed until it shows again;
+  the webcam branch is scaled to the size it is shown at (the bubble in the
+  share scene); the preview drops to 15 fps while recording. What is left is
+  one live window branch, the compositor and the webcam: about 1.5 cores at
+  1080p30 on an i5-11400.
+- **Hardware acceleration**: H.264 encoding (with the colour conversion
+  before it) and the webcam's MJPEG decoding
   run on the GPU through VA-API when available (measured on Intel UHD 730:
   encoding 1080p30 from ~42% to ~3% of a core), with automatic fallback to
   software. `REC0_NO_HW=1` forces software.

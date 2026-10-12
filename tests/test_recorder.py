@@ -257,3 +257,56 @@ def test_preview_rate_changes_while_recording(tmp_path):
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                             str(out)], capture_output=True, text=True).stdout
     assert float(probe) > 1.5
+
+
+def test_windows_entirely_behind_another_are_not_captured(tmp_path):
+    # Two maximized terminals: the one behind keeps its place but costs nothing;
+    # brought to the front again it comes back through the privacy delay.
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    same = Rect(0, 40, 1920, 1040)
+    t1 = FocusedWindow(11, "one - Terminal", "gnome-terminal", same)
+    t2 = FocusedWindow(12, "two - Terminal", "gnome-terminal", same)
+    log = []
+    snap = lambda tag: log.append((tag, sorted(rec.sources), sorted(d.dormant), sorted(d.revealed)))
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(t1)),
+        (800, lambda: snap("one")),
+        (900, lambda: d.focus_changed(t2)),
+        (1500, lambda: snap("two on top")),
+        (1600, lambda: d.focus_changed(t1)),
+        (1700, lambda: snap("one back, not yet revealed")),
+        (2300, lambda: snap("one revealed")),
+        (2400, lambda: d.focus_changed(t1, {11: t1, 12: None})),   # two closed
+        (2500, lambda: snap("two closed")),
+    ], until=3000)
+    assert not errors
+    assert log == [
+        ("one", [11], [], [11]),
+        ("two on top", [12], [11], [12]),
+        ("one back, not yet revealed", [11], [12], []),
+        ("one revealed", [11], [12], [11]),
+        ("two closed", [11], [], [11]),
+    ]
+
+
+def test_camera_branch_is_scaled_to_its_layer(tmp_path):
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    sizes = []
+
+    def size():
+        caps = rec.pipeline.get_by_name("camsize").get_property("caps").get_structure(0)
+        sizes.append((caps.get_value("width"), caps.get_value("height")))
+    chrome = FocusedWindow(1, "Docs - Google Chrome", "google-chrome", Rect(100, 100, 800, 600))
+    errors = _run(rec, p, [
+        (300, size),                                            # close-up: the canvas
+        (400, lambda: d.focus_changed(chrome)),                 # share: the overlay, once settled
+        (1200, size),
+        (1300, lambda: d.focus_changed(FocusedWindow(2, "Slack", "slack", Rect(0, 0, 10, 10)))),
+        (1400, size),                                           # growing back: at once
+    ], until=2000)
+    assert not errors
+    canvas = (p.width, p.height)
+    overlay = p.camera.overlay.rect
+    assert sizes == [canvas, (overlay.width // 2 * 2, overlay.height // 2 * 2), canvas]

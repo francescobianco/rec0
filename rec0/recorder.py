@@ -38,7 +38,7 @@ from .capture import Captures, background_description, find_microphone, frame_rg
 from .focus import FocusedWindow  # noqa: E402
 from .project import Project  # noqa: E402
 from .project import Rect  # noqa: E402
-from .scenes import Frame, Shown, compose, interpolate, screen_layer, window_layer  # noqa: E402
+from .scenes import Frame, Shown, compose, covered, interpolate, screen_layer, window_layer  # noqa: E402
 
 Gst.init(None)
 
@@ -59,14 +59,17 @@ def has_element(name: str) -> bool:
 
 
 def video_encoder(bitrate: int, fps: int) -> str:
-    """Raw video in, H.264 out: on the GPU when possible (see hw.py)."""
+    """Composed BGRA frames in, H.264 out: colour conversion and encoding both on the
+    GPU when possible (see hw.py), else videoconvert and x264 or openh264."""
     if hw.h264_encoder():
-        return f"video/x-raw,format=NV12 ! vah264lpenc bitrate={bitrate} key-int-max={fps * 2}"
+        return (f"vapostproc ! video/x-raw(memory:VAMemory),format=NV12 "
+                f"! vah264lpenc bitrate={bitrate} key-int-max={fps * 2}")
     if has_element("x264enc"):
-        return (f"video/x-raw,format=I420 ! x264enc bitrate={bitrate} speed-preset=veryfast tune=zerolatency "
-                f"key-int-max={fps * 2} ! video/x-h264,profile=high")
+        return (f"videoconvert ! video/x-raw,format=I420 ! x264enc bitrate={bitrate} speed-preset=veryfast "
+                f"tune=zerolatency key-int-max={fps * 2} ! video/x-h264,profile=high")
     if has_element("openh264enc"):
-        return f"video/x-raw,format=I420 ! openh264enc bitrate={bitrate * 1000} complexity=low gop-size={fps * 2}"
+        return (f"videoconvert ! video/x-raw,format=I420 ! openh264enc bitrate={bitrate * 1000} "
+                f"complexity=low gop-size={fps * 2}")
     raise RuntimeError(_("no H.264 encoder available (install gstreamer1.0-plugins-ugly)"))
 
 
@@ -115,6 +118,7 @@ class Recorder:
         self._playing = False
         self._mask_size = (0, 0)
         self.circle = False              # draw the webcam as a circle (share overlay)
+        self._camsize: tuple[int, int] | None = None   # size the webcam branch is scaled to
         # Window layers: key -> gst-launch source, kept across pipelines (preview -> record).
         self.sources: dict[int, str] = {}
         self.frozen: dict[int, bool] = {}   # per window: stop updating (privacy)
@@ -158,7 +162,11 @@ class Recorder:
                 f"{'! videoflip video-direction=horiz ' if cam.mirror is not False else ''}! tee name=camt "
                 f"camt. ! queue max-size-buffers=3 leaky=downstream "
                 f"! aspectratiocrop name=camcrop aspect-ratio={self._camcrop_aspect} ! videoscale ! videoconvert "
-                f"! video/x-raw,format=BGRA ! cairooverlay name=cammask ! {norm} ! mix.{CAMERA_PAD}")
+                # The size it is shown at (closeup: the canvas; overlay: the bubble), set by
+                # _fit_camera: scaling a 1080p webcam to a bubble early spares the
+                # conversion, the mask and the compositor most of their work.
+                f"! capsfilter name=camsize caps=video/x-raw,format=BGRA "
+                f"! cairooverlay name=cammask ! {norm} ! mix.{CAMERA_PAD}")
             if cam.bubble:
                 d = cam.bubble.size
                 parts.append(
@@ -199,7 +207,7 @@ class Recorder:
             f"vt. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 "
             # Frames before the scheduled start are dropped here (see schedule_begin()).
             f"! identity name=vrec "
-            f"! videoconvert ! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
+            f"! {video_encoder(o.video_bitrate, fps)} ! h264parse ! queue ! mux.")
         # async=false: during the warm-up no data reaches the file, and an async sink
         # would keep the whole pipeline from reaching PLAYING.
         parts.append(f"{mux} ! filesink async=false location={q(output)}")
@@ -250,11 +258,15 @@ class Recorder:
 
     # ---- scenes -----------------------------------------------------------
 
-    def apply(self, frame: Frame, placement=None):
-        """Move the layers. `placement` (camera Placement) updates fit/crop of the webcam."""
+    def apply(self, frame: Frame, placement=None, target: Frame | None = None):
+        """Move the layers. `placement` (camera Placement) updates fit/crop of the webcam;
+        `target` is the frame an animation is heading to (`frame` itself when still)."""
         self.frame = frame
         if not self.pipeline:
             return
+        goal = (target or frame).camera
+        if goal is not None:
+            self._fit_camera(self._scaled(goal).rect, settled=target is None or frame == target)
         layers = dict(frame.windows)
         order = {k: i for i, (k, _l) in enumerate(frame.windows)}
         for key, b in self._branches.items():
@@ -284,6 +296,20 @@ class Recorder:
                 if self._camcrop and aspect != self._camcrop_aspect:
                     Gst.util_set_object_arg(self._camcrop, "aspect-ratio", aspect)
                     self._camcrop_aspect = aspect
+
+    def _fit_camera(self, rect: Rect, settled: bool):
+        """Size the webcam branch to the layer it is heading to: at once when growing (the
+        compositor would upscale a small picture), once the animation has settled when
+        shrinking (it scales the full picture down meanwhile, as before)."""
+        el = self.pipeline.get_by_name("camsize") if self.pipeline else None
+        if el is None:
+            return
+        want = (max(16, rect.width // 2 * 2), max(16, rect.height // 2 * 2))
+        have = self._camsize
+        if want == have or (have is not None and want[0] * want[1] < have[0] * have[1] and not settled):
+            return
+        self._camsize = want
+        el.set_property("caps", Gst.Caps.from_string(f"video/x-raw,format=BGRA,width={want[0]},height={want[1]}"))
 
     # ---- window layers ----------------------------------------------------
 
@@ -878,6 +904,7 @@ class Director:
         self.bubble: Rect | None = None             # on-screen bubble, when shown
         self.private = None                         # privacy rule holding the scene, if any
         self.windows: dict[int, FocusedWindow] = {} # presented windows, bottom to top
+        self.dormant: set[int] = set()              # presented, but entirely behind another: not captured
         self.revealed: set[int] = set()             # past the privacy delay
         self.watched: set[int] = set()              # shared with the focus tracker
         self.scene = "camera"
@@ -1001,6 +1028,7 @@ class Director:
     def _forget(self, key: int):
         self.captures.release_window(key)
         self.windows.pop(key, None)
+        self.dormant.discard(key)
         self.revealed.discard(key)
         self.watched.discard(key)
         src = self._reveals.pop(key, None)
@@ -1049,7 +1077,47 @@ class Director:
         self.scene = scene
         self._update(animate=changed, placement=self._placement(scene) if changed else None)
 
+    def _covered(self) -> set[int]:
+        """Presented windows entirely behind another presented one, on the screen as it is
+        now (whatever the scene: in the close-up they are hidden anyway)."""
+        if not self.per_window or self.area is None:
+            return set()
+        layers = []
+        for key, w in self.windows.items():
+            if key == self.SCREEN_KEY or w.hidden:
+                continue
+            layer = window_layer(self.project, self.area, w.area, w.shadow, w.fullscreen)
+            if layer is not None:
+                layers.append((key, layer))
+        return covered(layers)
+
+    def _settle(self):
+        """Resources follow visibility: a window entirely behind another one keeps its
+        place in the presentation but is not captured, converted or composed (each
+        maximized window costs about half a core). Uncovered again, it comes back
+        through the privacy delay, like a new one."""
+        now = self._covered()
+        for key in now - self.dormant:
+            self.dormant.add(key)
+            self.revealed.discard(key)
+            src = self._reveals.pop(key, None)
+            if src:
+                GLib.source_remove(src)
+            self.captures.release_window(key)
+            self.recorder.remove_window(key)
+        for key in self.dormant - now:
+            self.dormant.discard(key)
+            win = self.windows.get(key)
+            source = self.captures.window_source(win) if win is not None else None
+            if source is None:
+                self._forget(key)
+                continue
+            layer = window_layer(self.project, self.area, win.area, win.shadow, win.fullscreen)
+            self.recorder.add_window(key, source, layer.crop if layer else None)
+            self._reveal_later(key)
+
     def _update(self, animate: bool = False, placement=None):
+        self._settle()
         target = self._target()
         if animate:
             self._animate(target, placement)
@@ -1073,13 +1141,13 @@ class Director:
         if self._anim:
             GLib.source_remove(self._anim)
             self._anim = None
-        self.recorder.apply(self.frame, placement)
+        self.recorder.apply(self.frame, placement, target)
 
         def step():
             t = 1.0 if duration == 0 else min(1.0, (time.monotonic() - t0) / duration)
             goal = self._anim_target
             self.frame = interpolate(start, goal, t) if t < 1 else goal
-            self.recorder.apply(self.frame)
+            self.recorder.apply(self.frame, target=goal)
             if t >= 1:
                 self._anim = None
                 return False

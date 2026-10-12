@@ -6,6 +6,26 @@ All notable changes to rec0 are documented here. The format follows
 
 ## [Unreleased]
 
+### Resources
+
+- Resources follow visibility. A presented window that sits entirely behind
+  another one (two maximized windows, the usual case) keeps its place in the
+  presentation but is no longer captured, converted or composed; uncovered
+  again, it comes back through the privacy delay like a new window. Each
+  maximized window had cost about half a core for as long as it stayed in the
+  presentation, so a recording that visited a few windows climbed past two
+  cores within a minute and the desktop stuttered.
+- The webcam branch is scaled to the size it is shown at: the canvas in the
+  close-up, the bubble in the share scene (a 1080p webcam converted, masked
+  and composed at full size for a 240 px bubble was 40 % of a core).
+- The composed frames are colour-converted on the GPU too when the GPU
+  encodes (vapostproc before vah264lpenc): 15 % of a core less.
+- The preview runs at 15 fps while recording (5 fps with rec0 in the
+  background): it is a monitor, the recording keeps its rate.
+- Measured on an i5-11400 with a 1080p webcam, recording the share scene with
+  one maximized window: 210 % of a core before, 154 % after; the close-up
+  164 % before, 127 % after; a covered window 0 % instead of about 55 %.
+
 ### Scenes
 
 - Automatic scene switching on Wayland: a GNOME Shell extension, installed
