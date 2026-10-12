@@ -20,6 +20,7 @@ windows:
   - match: firefox
   - match: gnome-terminal
   - match: jetbrains-webstorm
+  - match: pragma-chess
 
 audio:
   processing: auto
