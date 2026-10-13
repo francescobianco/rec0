@@ -28,6 +28,14 @@ All notable changes to rec0 are documented here. The format follows
 
 ### Scenes
 
+- A dialog is shown over its main window, as on screen (X11): a modal focused
+  before its window (a welcome dialog at start-up) floated alone on the
+  background.
+- Menus, drop-downs and tooltips are recorded (X11). They are windows of their
+  own, never focused nor listed by the window manager, so they never showed:
+  each one open by a presented window is now captured on top of it, in step
+  with it, and goes with it when the window turns private, hidden or covered.
+
 - Automatic scene switching on Wayland: a GNOME Shell extension, installed
   with rec0, tells it which window has the focus. Scenes follow the focus and
   private pages freeze the screen as on X11 (`make shell-extension` installs

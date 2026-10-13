@@ -26,6 +26,7 @@ class FocusTracker:
 
     active   the focused window (FocusedWindow | None)
     watched  {xid: FocusedWindow | None} for the windows in `watch` (None: closed)
+    popups   {xid: FocusedWindow} menus and drop-downs open by the windows in `watch`
 
     Title changes (browser tabs), moves and resizes all count as changes.
     """
@@ -57,16 +58,18 @@ class FocusTracker:
         try:
             while not self._stop.is_set():
                 active = x.active_window()
-                watched = {xid: x.window_info(xid) for xid in tuple(self.watch)}
-                state = (active, tuple(sorted(watched.items())))
+                watch = tuple(self.watch)
+                watched = {xid: x.window_info(xid) for xid in watch}
+                popups = x.popups(watch, active.xid if active else None)
+                state = (active, tuple(sorted(watched.items())), tuple(popups.items()))
                 if state != last:
                     last = state
-                    GLib.idle_add(self._deliver, active, watched)
+                    GLib.idle_add(self._deliver, active, watched, popups)
                 self._stop.wait(self.interval)
         finally:
             x.close()
 
-    def _deliver(self, active, watched):
+    def _deliver(self, active, watched, popups):
         if not self._stop.is_set():
-            self.callback(active, watched)
+            self.callback(active, watched, popups)
         return False

@@ -124,6 +124,7 @@ class Recorder:
         self.frozen: dict[int, bool] = {}   # per window: stop updating (privacy)
         self._branches: dict[int, dict] = {}
         self._crops: dict[int, tuple] = {}
+        self._linger: set[int] = set()            # branches that outlive their capture (menus)
         self.on_window_lost: Callable | None = None   # (key) a window's capture failed
         self.audio_tracks = 0
         self.scale = 1.0                 # canvas size relative to the project's (preview < 1)
@@ -313,11 +314,16 @@ class Recorder:
 
     # ---- window layers ----------------------------------------------------
 
-    def add_window(self, key: int, source: str, crop: tuple[int, int, int, int] | None = None):
-        """Register a window capture; it starts frozen (see set_window_frozen)."""
+    def add_window(self, key: int, source: str, crop: tuple[int, int, int, int] | None = None,
+                   linger: bool = False):
+        """Register a window capture; it starts frozen (see set_window_frozen).
+        A `linger` branch outlives its capture: when the window goes away, the frames
+        still in the privacy delay keep coming and its last one stays, until removed."""
         self.sources[key] = source
         if crop:
             self._crops[key] = crop
+        if linger:
+            self._linger.add(key)
         self.frozen.setdefault(key, True)
         if self.pipeline and key not in self._branches:
             self._add_branch(key)
@@ -326,7 +332,13 @@ class Recorder:
         self.sources.pop(key, None)
         self._crops.pop(key, None)
         self.frozen.pop(key, None)
+        self._linger.discard(key)
         self._remove_branch(key)
+
+    def capture_ended(self, key: int) -> bool:
+        """Whether a lingering branch's capture has ended (its window went away)."""
+        b = self._branches.get(key)
+        return b is not None and b.get("ended", False)
 
     def set_window_frozen(self, key: int, frozen: bool):
         """Freeze a window layer on its last frame (the valve drops new ones)."""
@@ -721,7 +733,10 @@ class Recorder:
         elif t == Gst.MessageType.ERROR and self._window_of(msg.src) is not None:
             # A window closed or was minimized: drop its layer, keep recording.
             key = self._window_of(msg.src)
-            self._remove_branch(key)
+            if key in self._linger:
+                self._branches[key]["ended"] = True
+            else:
+                self._remove_branch(key)
             self._emit(self.on_window_lost, key)
         elif t == Gst.MessageType.ERROR and not self.begun and self._from_hw_jpeg(msg):
             # The GPU decoder refused this webcam: decode in software, start over.
@@ -907,6 +922,9 @@ class Director:
         self.dormant: set[int] = set()              # presented, but entirely behind another: not captured
         self.revealed: set[int] = set()             # past the privacy delay
         self.watched: set[int] = set()              # shared with the focus tracker
+        self.popups: dict[int, FocusedWindow] = {}  # menus and drop-downs of presented windows, captured
+        self._offered: dict[int, FocusedWindow] = {}   # the open ones, as the tracker last reported them
+        self._closing: dict[int, int] = {}          # closed popup -> timer removing it after its last frames
         self.scene = "camera"
         self._anim = None
         self._reveals: dict[int, int] = {}
@@ -932,6 +950,8 @@ class Director:
                 out.append(Shown(key, self.area, fullscreen=True, visible=key in self.revealed, screen=True))
             else:
                 out.append(Shown(key, w.area, w.shadow, w.fullscreen, key in self.revealed and not w.hidden))
+        for key, p in self.popups.items():   # always on top: they are on screen
+            out.append(Shown(key, p.area, fullscreen=True, visible=p.parent in self.revealed))
         return out
 
     def _target(self) -> Frame:
@@ -955,8 +975,11 @@ class Director:
 
     # ---- inputs -----------------------------------------------------------
 
-    def focus_changed(self, win: FocusedWindow | None, watched: dict | None = None):
-        """From the focus tracker: the active window, and the presented ones."""
+    def focus_changed(self, win: FocusedWindow | None, watched: dict | None = None, popups: dict | None = None):
+        """From the focus tracker: the active window, the presented ones and the menus
+        and drop-downs open by them (X11 only)."""
+        if popups is not None:
+            self._offered = popups
         for key, info in (watched or {}).items():
             if key not in self.windows:
                 continue
@@ -1013,6 +1036,9 @@ class Director:
             key, source = self.SCREEN_KEY, self.captures.screen_source()
             info = win or FocusedWindow(0, "", "", self.area, True, self.area)
         else:
+            parent = self._parent_of(win)
+            if parent is not None:
+                self._present(parent)     # a dialog shows over its main window, as on screen
             key, source, info = win.xid, self.captures.window_source(win), win
         if source is None:
             return
@@ -1024,6 +1050,16 @@ class Director:
         self.windows.pop(key, None)
         self.windows[key] = info          # last = on top
         self.watched.add(key)
+
+    def _parent_of(self, win: FocusedWindow) -> FocusedWindow | None:
+        """A dialog's main window, when it belongs to the presentation and is not there yet."""
+        if not win.parent or win.parent in self.windows:
+            return None
+        p = self.captures.window_info(win.parent)
+        if (p is None or p.hidden or self.project.match_window(p.title, p.wm_class) is None
+                or self.project.private(p.title, p.wm_class) is not None):
+            return None
+        return p
 
     def _forget(self, key: int):
         self.captures.release_window(key)
@@ -1037,6 +1073,8 @@ class Director:
         self.recorder.remove_window(key)
 
     def _lost(self, key: int):
+        if key in self.popups:
+            return   # closed: its branch lingers until _sync_popups removes it
         # Capture failed (window closed or minimized): it can come back when focused again.
         self._forget(key)
         self._update()
@@ -1116,8 +1154,57 @@ class Director:
             self.recorder.add_window(key, source, layer.crop if layer else None)
             self._reveal_later(key)
 
+    def _shows_popups(self, owner: int) -> bool:
+        w = self.windows.get(owner)
+        return (w is not None and not w.hidden and owner in self.revealed and owner not in self.dormant
+                and not self.recorder.frozen.get(owner))
+
+    def _sync_popups(self):
+        """Menus, drop-downs and tooltips are windows of their own: each open one of a
+        presented window is captured on its own, on top. No delay of their own (their
+        window is past it already); a private or hidden window takes them away at once."""
+        want = {k: p for k, p in self._offered.items() if self._shows_popups(p.parent)}
+        for key in list(self.popups):
+            if key in want:
+                src = self._closing.pop(key, None)
+                if src:
+                    GLib.source_remove(src)
+            elif not self._shows_popups(self.popups[key].parent):
+                self._drop_popup(key)
+            elif key not in self._closing:
+                # Closed: the frames still in the privacy delay show it open; then it goes.
+                self._closing[key] = GLib.timeout_add(int(SCREEN_DELAY * 1000) + 50, self._popup_closed, key)
+        for key, p in want.items():
+            if key in self.popups and not self.recorder.capture_ended(key):
+                self.popups[key] = p
+                continue
+            if key in self.popups:
+                self.recorder.remove_window(key)   # reopened (menus keep their window): capture again
+            source = self.captures.window_source(p)
+            if source is None:
+                continue
+            layer = window_layer(self.project, self.area, p.area, fullscreen=True)
+            self.recorder.set_window_frozen(key, False)
+            self.recorder.add_window(key, source, layer.crop if layer else None, linger=True)
+            self.popups[key] = p
+
+    def _popup_closed(self, key: int):
+        self._closing.pop(key, None)
+        self._drop_popup(key)
+        self._update()
+        return False
+
+    def _drop_popup(self, key: int):
+        src = self._closing.pop(key, None)
+        if src:
+            GLib.source_remove(src)
+        self.popups.pop(key, None)
+        self.captures.release_window(key)
+        self.recorder.remove_window(key)
+
     def _update(self, animate: bool = False, placement=None):
         self._settle()
+        self._sync_popups()
         target = self._target()
         if animate:
             self._animate(target, placement)

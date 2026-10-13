@@ -290,6 +290,57 @@ def test_windows_entirely_behind_another_are_not_captured(tmp_path):
     ]
 
 
+def test_dialog_brings_its_main_window_along(tmp_path, monkeypatch):
+    # A modal focused before its main window (a welcome dialog at start-up): shown
+    # over the main window, as on screen, not floating on the background.
+    p, rec, d = _session(tmp_path)
+    main = FocusedWindow(21, "Game - Terminal", "gnome-terminal", Rect(0, 40, 1920, 1040), fullscreen=True)
+    dialog = FocusedWindow(22, "Welcome", "gnome-terminal", Rect(400, 200, 1100, 680), parent=21)
+    monkeypatch.setattr(d.captures, "window_info", {21: main}.get)
+    rec.start(d.frame, p.output_path())
+    log = []
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(dialog)),
+        (900, lambda: log.append([k for k, l in d.frame.windows if l.alpha > 0])),
+    ], until=1200)
+    assert not errors
+    assert log == [[21, 22]]
+
+
+def test_menus_are_shown_on_top_of_their_window(tmp_path):
+    from rec0.recorder import SCREEN_DELAY
+
+    p, rec, d = _session(tmp_path)
+    rec.start(d.frame, p.output_path())
+    term = FocusedWindow(31, "one - Terminal", "gnome-terminal", Rect(0, 40, 1920, 1040), fullscreen=True)
+    menu = FocusedWindow(32, "", "", Rect(10, 70, 300, 400), parent=31)
+    log = []
+    snap = lambda tag: log.append((tag, [k for k, l in d.frame.windows if l.alpha > 0], sorted(rec.sources)))
+    gone = 1100 + int(SCREEN_DELAY * 1000) + 200
+    errors = _run(rec, p, [
+        (200, lambda: d.focus_changed(term)),
+        (300, lambda: d.focus_changed(term, {31: term}, {32: menu})),    # opened before term is revealed
+        (400, lambda: snap("term not revealed")),
+        (900, lambda: d.focus_changed(term, {31: term}, {32: menu})),
+        (1000, lambda: snap("open")),
+        (1100, lambda: d.focus_changed(term, {31: term}, {})),
+        (1200, lambda: snap("closed, last frames")),
+        (gone, lambda: snap("gone")),
+        (gone + 100, lambda: d.focus_changed(term, {31: term}, {32: menu})),
+        (gone + 200, lambda: d.focus_changed(term.__class__(31, "Home - mybank.example - Terminal",
+                                                            "gnome-terminal", term.rect, True), {31: term}, {32: menu})),
+        (gone + 300, lambda: snap("private")),
+    ], until=gone + 600)
+    assert not errors
+    assert log == [
+        ("term not revealed", [], [31]),
+        ("open", [31, 32], [31, 32]),
+        ("closed, last frames", [31, 32], [31, 32]),
+        ("gone", [31], [31]),
+        ("private", [31], [31]),
+    ]
+
+
 def test_camera_branch_is_scaled_to_its_layer(tmp_path):
     p, rec, d = _session(tmp_path)
     rec.start(d.frame, p.output_path())

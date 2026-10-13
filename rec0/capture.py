@@ -524,6 +524,12 @@ class Captures:
         return (f"pipewiresrc path={cast.node_id} do-timestamp=true "
                 f"keepalive-time={max(1, 1000 // self.project.fps)} always-copy=true")
 
+    def window_info(self, wid: int):
+        """Any window by its id (X11; elsewhere None): a dialog's main window."""
+        if self.backend != "x11" or self.project.screen.monitor == "test":
+            return None
+        return x11.window_info(wid)
+
     def release_window(self, key: int):
         """The window left the presentation: stop its stream."""
         cast = self.casts.pop(key, None)

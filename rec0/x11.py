@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import ctypes
 import threading
-from ctypes import POINTER, Structure, byref, c_char_p, c_int, c_long, c_short, c_ubyte, c_ulong, c_ushort, c_void_p
+from ctypes import (POINTER, Structure, byref, c_char_p, c_int, c_long, c_short, c_ubyte, c_uint, c_ulong,
+                    c_ushort, c_void_p)
 from dataclasses import dataclass
 
 from .project import Rect
@@ -25,6 +26,7 @@ class FocusedWindow:
     content: Rect | None = None                 # what a capture of the window shows (no shadows)
     shadow: tuple[int, int, int, int] = (0, 0, 0, 0)   # client-side shadows to crop: l, t, r, b
     hidden: bool = False       # minimized
+    parent: int = 0            # a dialog's main window; the window a menu or drop-down belongs to
 
     @property
     def area(self) -> Rect:
@@ -42,6 +44,10 @@ Window = Atom = c_ulong
 Display_p = c_void_p
 Success = 0
 AnyPropertyType = 0
+IsViewable = 2
+# The ids of all the windows of one X client share the bits above the server's resource
+# mask (0x1fffff on Xorg): menus and drop-downs are found by their client.
+CLIENT_MASK = 0x1FFFFF
 
 
 class XErrorEvent(Structure):
@@ -142,6 +148,9 @@ def _load():
         x.XTranslateCoordinates.argtypes = [Display_p, Window, Window, c_int, c_int,
                                             POINTER(c_int), POINTER(c_int), POINTER(Window)]
         x.XTranslateCoordinates.restype = c_int
+        x.XQueryTree.argtypes = [Display_p, Window, POINTER(Window), POINTER(Window),
+                                 POINTER(POINTER(Window)), POINTER(c_uint)]
+        x.XQueryTree.restype = c_int
         x.XInitThreads()
         _handler = ErrorHandler(_on_error)    # keep a reference: X calls it later
         x.XSetErrorHandler(_handler)
@@ -294,6 +303,7 @@ class X11:
         fullscreen = self.atom("_NET_WM_STATE_FULLSCREEN") in state or {
             self.atom("_NET_WM_STATE_MAXIMIZED_VERT"), self.atom("_NET_WM_STATE_MAXIMIZED_HORZ")} <= state
         hidden = self.atom("_NET_WM_STATE_HIDDEN") in state
+        transient = self._cardinals(wid, "WM_TRANSIENT_FOR")
         frame = self._cardinals(wid, "_NET_FRAME_EXTENTS")
         gtk = self._cardinals(wid, "_GTK_FRAME_EXTENTS")
         if self._dpy in _errors:     # the window went away while we were reading it
@@ -306,7 +316,44 @@ class X11:
         content = Rect(x + gl, y + gt, w - gl - gr, h - gt - gb)
         rect = Rect(x - fl + gl, y - ft + gt, w + fl + fr - gl - gr, h + ft + fb - gt - gb)
         return FocusedWindow(xid=wid, title=title, wm_class=wm_class, rect=rect, fullscreen=fullscreen,
-                             content=content, shadow=(gl, gt, gr, gb), hidden=hidden)
+                             content=content, shadow=(gl, gt, gr, gb), hidden=hidden,
+                             parent=transient[0] if transient and transient[0] != self.root else 0)
+
+    def popups(self, owners, prefer: int | None = None) -> dict[int, FocusedWindow]:
+        """Menus, drop-downs and tooltips open by the applications of `owners` (window
+        ids), bottom to top. They are override-redirect windows of the same X client,
+        never focused nor listed by the window manager; each comes with the owner it
+        belongs to in `parent` (`prefer`, the active window, when it is one of them)."""
+        clients = {}
+        for w in owners:
+            clients.setdefault(w & ~CLIENT_MASK, w)
+        if prefer in owners:
+            clients[prefer & ~CLIENT_MASK] = prefer
+        if not clients or not self._dpy:
+            return {}
+        root, parent, children, n = Window(), Window(), POINTER(Window)(), c_uint()
+        if not self._x.XQueryTree(self._dpy, self.root, byref(root), byref(parent), byref(children), byref(n)):
+            return {}
+        try:
+            ids = children[:n.value] if children else []
+        finally:
+            if children:
+                self._x.XFree(children)
+        out = {}
+        for wid in ids:
+            owner = clients.get(wid & ~CLIENT_MASK)
+            if owner is None or wid in owners:
+                continue
+            _errors.pop(self._dpy, None)
+            attrs = XWindowAttributes()
+            if not self._x.XGetWindowAttributes(self._dpy, wid, byref(attrs)) or self._dpy in _errors:
+                continue
+            if not attrs.override_redirect or attrs.map_state != IsViewable or min(attrs.width, attrs.height) < 4:
+                continue
+            bw = attrs.border_width
+            r = Rect(attrs.x + bw, attrs.y + bw, attrs.width, attrs.height)
+            out[wid] = FocusedWindow(wid, "", "", r, content=r, parent=owner)
+        return out
 
     def client_windows(self) -> list[X11Window]:
         if not self._dpy:
@@ -385,6 +432,10 @@ def monitors() -> list[dict]:
 
 def window_info(wid: int) -> FocusedWindow | None:
     return _shared(X11.window_info, wid)
+
+
+def popups(owners, prefer: int | None = None) -> dict[int, FocusedWindow]:
+    return _shared(X11.popups, owners, prefer)
 
 
 def workarea() -> Rect | None:
